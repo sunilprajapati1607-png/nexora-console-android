@@ -4,7 +4,7 @@
 #
 #   1. bumps the version in app/build.gradle.kts
 #   2. builds the APK
-#   3. copies it to releases/nexora-console-<name>.apk
+#   3. copies it to releases/nexora-console-<name>-<code>.apk
 #   4. writes releases/latest.json — the file the service reads
 #   5. commits, and pushes if you say so
 #
@@ -71,7 +71,12 @@ if (-not (Test-Path $Apk)) { Say '  No APK was produced.' 'Red'; Read-Host '  En
 # ---- stage it where the phones will fetch it ------------------------
 $ReleaseDir = Join-Path $Root 'releases'
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
-$Out = Join-Path $ReleaseDir "nexora-console-$NewName.apk"
+# The code goes in the name so every build has an address of its own.
+# Reusing one address would mean a new manifest pointing at bytes GitHub's
+# cache may still be serving from the last build — and the phone would
+# refuse the download for failing its checksum, which is right but baffling.
+$FileName = "nexora-console-$NewName-$NewCode.apk"
+$Out = Join-Path $ReleaseDir $FileName
 Copy-Item $Apk $Out -Force
 
 $Sha  = (Get-FileHash $Out -Algorithm SHA256).Hash.ToLower()
@@ -82,7 +87,7 @@ $Size = (Get-Item $Out).Length
 $Remote = (git -C $Root remote get-url origin)
 $Slug   = [regex]::Match($Remote, 'github\.com[:/](.+?)(\.git)?$').Groups[1].Value
 $Branch = (git -C $Root rev-parse --abbrev-ref HEAD)
-$Url    = "https://raw.githubusercontent.com/$Slug/$Branch/releases/nexora-console-$NewName.apk"
+$Url    = "https://raw.githubusercontent.com/$Slug/$Branch/releases/$FileName"
 
 # ---- the file the service reads -------------------------------------
 $Manifest = [ordered]@{
