@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose paints everything; this exists only so the window has the
+         console's page colour from the first frame instead of white. -->
+    <style name="Theme.NexoraConsole" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/page</item>
+        <item name="android:statusBarColor">@color/page</item>
+        <item name="android:navigationBarColor">@color/page</item>
+    </style>
+</resources>

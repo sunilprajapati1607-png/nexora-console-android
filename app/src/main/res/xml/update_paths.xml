@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the one folder downloaded builds land in. Nothing else in this
+     application's storage is reachable through the provider. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild
+.cxx
+# The published builds ARE the point of this repository, so they are kept.
+# Only the build directory's copy is ignored.
+app/build/outputs/**/*.apk
+*.keystore
+
+# Loose builds at the root are working copies; the published ones live
+# in releases/ and are named for their version.
+/nexora-console-*-debug.apk

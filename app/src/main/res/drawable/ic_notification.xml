@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nexora's N, as a status bar needs it: one flat silhouette, no colour of
+     its own, drawn inside the 24dp box Android tints for itself. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4,4h3.2v16h-3.2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M16.8,4h3.2v16h-3.2z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M7.2,4h2.9l9.9,13.6v2.4h-2.8l-10,-13.7z" />
+</vector>
