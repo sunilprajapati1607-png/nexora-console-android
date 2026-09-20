@@ -68,6 +68,16 @@ class Api(private val baseUrl: String, private val key: String) {
     }
 
     /** 4.44.0 — what build of this application the owner has published. */
+    /* 1.5.0 — what Nexora said in every room, and saying more */
+    suspend fun broadcasts(): List<Broadcast> = withContext(Dispatchers.IO) {
+        val a = request("GET", "/admin/api/broadcast", null).optJSONArray("broadcasts") ?: return@withContext emptyList()
+        (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { Broadcast.from(it) } }
+    }
+
+    suspend fun broadcast(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        request("POST", "/admin/api/broadcast", body)
+    }
+
     suspend fun latestRelease(): Release? = withContext(Dispatchers.IO) {
         Release.from(request("GET", "/admin/api/app/latest", null).optJSONObject("release"))
     }

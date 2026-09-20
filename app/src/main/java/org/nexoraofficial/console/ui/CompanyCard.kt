@@ -481,8 +481,23 @@ private fun ActionsCard(
                 )
             }, small = true)
             ConsoleButton("+1 year", { vm.act(id, "extend", 365) }, small = true)
+            /* 1.5.0 — the plan; seats are set separately */
+            val onStd = company.plan == "STANDARD"
+            ConsoleButton(
+                if (onStd) "Plan: Standard" else "Plan: Pro",
+                {
+                    onAsk(
+                        Ask.Confirm(
+                            title = if (onStd) "Change to Pro?" else "Change to Standard?",
+                            body = if (onStd) "Pro carries everything ticked under Plans." else "Standard is calculation and costing; the rest goes at the next check. Seats are not affected.",
+                            confirmText = "Change"
+                        ) { vm.setPlan(id, if (onStd) "PRO" else "STANDARD") }
+                    )
+                },
+                small = true
+            )
         }
-        if (company.isDemo) Why("turns this demo into a paying customer")
+        if (company.isDemo) Why("turns this demo into a paying customer — a demo has every feature whatever its plan")
 
         Spacer(Modifier.height(16.dp))
         GroupHeading("Machines and seats")

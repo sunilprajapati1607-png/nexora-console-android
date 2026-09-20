@@ -12,6 +12,8 @@ import org.json.JSONObject
 import org.nexoraofficial.console.data.Api
 import org.nexoraofficial.console.data.ApiError
 import org.nexoraofficial.console.data.Audience
+import org.nexoraofficial.console.data.Broadcast
+import org.nexoraofficial.console.data.PLAN_FEATURES
 import org.nexoraofficial.console.data.Company
 import org.nexoraofficial.console.data.ConsoleData
 import org.nexoraofficial.console.data.Inquiry
@@ -130,6 +132,11 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     var showNewCompany by mutableStateOf(false)
 
     var settingsForm by mutableStateOf(SettingsForm())
+    /* 1.5.0 — the plan matrix as it is being edited, and the messages sent to every room */
+    var planMatrix by mutableStateOf<Map<String, Map<String, Boolean>>>(emptyMap())
+    var broadcasts by mutableStateOf<List<Broadcast>>(emptyList())
+    var broadcastText by mutableStateOf("")
+    var broadcastVersion by mutableStateOf("")
     var newCompany by mutableStateOf(NewCompanyForm())
 
     /* ---- the people on the open company ---- */
@@ -228,6 +235,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 val fresh = api.licences()
                 data = fresh
                 settingsForm = SettingsForm.of(fresh.settings)
+                planMatrix = fresh.settings.planFeatures
                 gateError = null
                 if (!signedIn) {
                     signedIn = true
@@ -241,6 +249,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                    has not been deployed with enquiries yet should still open. */
                 loadInquiries(quiet = true)
                 loadFeedback(quiet = true)
+                loadBroadcasts()
                 /* And whether a newer build of this application exists. */
                 checkForUpdate()
             } catch (e: Exception) {
@@ -836,6 +845,93 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /* ---------- service settings ---------- */
+
+    /* ---- the plans (1.5.0) ---- */
+
+    fun setPlanFeature(plan: String, feature: String, on: Boolean) {
+        val row = HashMap(planMatrix[plan] ?: emptyMap())
+        row[feature] = on
+        val m = HashMap(planMatrix)
+        m[plan] = row
+        planMatrix = m
+    }
+
+    fun savePlans() {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val body = JSONObject()
+                for (plan in listOf("STANDARD", "PRO")) {
+                    val row = JSONObject()
+                    PLAN_FEATURES.forEach { f -> row.put(f.id, planMatrix[plan]?.get(f.id) == true) }
+                    body.put(plan, row)
+                }
+                api.settings(JSONObject().put("planFeatures", body))
+                say("Plans saved — every installation reads them at its next check.", Msg.Kind.OK)
+                load()
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun setPlan(id: Int, plan: String) =
+        companyAction(
+            JSONObject().put("id", id).put("action", "plan").put("plan", plan),
+            okText = if (plan == "STANDARD") "Now on Standard — calculation and costing." else "Now on Pro — everything."
+        )
+
+    /* ---- a message from Nexora into every room (1.5.0) ---- */
+
+    fun loadBroadcasts() {
+        viewModelScope.launch {
+            try { broadcasts = api.broadcasts() } catch (e: Exception) { /* a service without the route: nothing to list */ }
+        }
+    }
+
+    fun sendBroadcast() {
+        val text = broadcastText.trim()
+        val v = broadcastVersion.trim()
+        if (text.isEmpty()) return
+        val body = if (v.isNotEmpty() && !text.contains(v)) "$text ($v)" else text
+        val tags = org.json.JSONArray()
+        if (v.isNotEmpty()) tags.put(JSONObject().put("kind", "UPDATE").put("ref", v))
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.broadcast(JSONObject().put("action", "send").put("body", body).put("tags", tags))
+                val err = r.optString("error")
+                if (err.isNotEmpty()) { say(r.optString("message", err), Msg.Kind.ERR); return@launch }
+                val rooms = r.optInt("rooms", 0)
+                say("Sent to $rooms " + (if (rooms == 1) "room." else "rooms."), Msg.Kind.OK)
+                broadcastText = ""
+                broadcastVersion = ""
+                loadBroadcasts()
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun withdrawBroadcast(body: String) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.broadcast(JSONObject().put("action", "withdraw").put("body", body))
+                val rooms = r.optInt("rooms", 0)
+                say("Withdrawn from $rooms " + (if (rooms == 1) "room." else "rooms."), Msg.Kind.OK)
+                loadBroadcasts()
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+        }
+    }
 
     fun saveSettings() {
         val f = settingsForm

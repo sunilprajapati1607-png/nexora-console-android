@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Info
@@ -291,6 +293,11 @@ fun MoreScreen(
                         "one message to everybody who should hear it"
                     ) { nav.open(Screen.Announce) }
                     MenuRow(
+                        Icons.Outlined.Forum,
+                        "Message every plant",
+                        "as Nexora, in each company's conversation"
+                    ) { nav.open(Screen.Broadcast) }
+                    MenuRow(
                         Icons.Outlined.TableChart,
                         "Export to Excel",
                         "every company and machine, saved on this phone"
@@ -323,6 +330,11 @@ fun MoreScreen(
                         "Service settings",
                         "demo length, offline days, registrations"
                     ) { nav.open(Screen.Settings) }
+                    MenuRow(
+                        Icons.Outlined.WorkspacePremium,
+                        "Plans",
+                        "what Standard and Pro carry"
+                    ) { nav.open(Screen.Plans) }
                     MenuRow(
                         Icons.Outlined.SystemUpdate,
                         if (vm.updateAvailable) "Update to ${vm.release?.versionName}"
@@ -421,6 +433,31 @@ fun SettingsScreen(vm: ConsoleViewModel, gutter: PaddingValues, page: Modifier) 
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item { Box(page) { SettingsCard(vm) } }
+    }
+}
+
+@Composable
+fun PlansScreen(vm: ConsoleViewModel, gutter: PaddingValues, page: Modifier) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = gutter,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item { Box(page) { PlansCard(vm) } }
+    }
+}
+
+@Composable
+fun BroadcastScreen(vm: ConsoleViewModel, gutter: PaddingValues, page: Modifier, onAsk: (Ask) -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = gutter,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item { Box(page) { BroadcastCard(vm, onAsk) } }
+        item { Box(page) { BroadcastsSentCard(vm, onAsk) } }
     }
 }
 

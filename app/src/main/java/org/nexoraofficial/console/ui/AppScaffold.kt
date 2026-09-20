@@ -224,6 +224,8 @@ fun AppScaffold(vm: ConsoleViewModel) {
                 Screen.NewCompany -> NewCompanyScreen(vm, nav, gutter, page, wide)
                 Screen.Announce -> AnnounceScreen(vm, gutter, page)
                 Screen.Settings -> SettingsScreen(vm, gutter, page)
+                Screen.Plans -> PlansScreen(vm, gutter, page)
+                Screen.Broadcast -> BroadcastScreen(vm, gutter, page) { ask = it }
                 Screen.About -> AboutScreen(vm, gutter, page)
             }
 
@@ -293,6 +295,8 @@ private fun titleOf(screen: Screen, vm: ConsoleViewModel): String = when (screen
     Screen.NewCompany -> "New company"
     Screen.Announce -> "Tell the customers"
     Screen.Settings -> "Service settings"
+    Screen.Plans -> "Plans"
+    Screen.Broadcast -> "Message every plant"
     Screen.About -> "About"
 }
 

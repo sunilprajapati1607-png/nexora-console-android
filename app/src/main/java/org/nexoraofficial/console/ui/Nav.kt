@@ -77,6 +77,9 @@ sealed interface Screen {
     data object NewCompany : Screen
     data object Announce : Screen
     data object Settings : Screen
+    /* 1.5.0 — the plans, and a message into every room */
+    data object Plans : Screen
+    data object Broadcast : Screen
     data object About : Screen
 }
 

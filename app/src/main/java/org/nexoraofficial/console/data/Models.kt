@@ -52,7 +52,9 @@ data class Company(
     val adminNames: String?,
     /* 4.42.0 — the addresses a circular would actually reach at this
        company: its people, not only its one registered inbox. */
-    val userEmails: String?
+    val userEmails: String?,
+    /* 1.5.0 — STANDARD or PRO; a demo reads as everything whatever this says */
+    val plan: String = "PRO"
 ) {
     /** The same reading the console shows on the pill. */
     val shownState: String
@@ -95,7 +97,8 @@ data class Company(
             usersCount = o.int("users_count"),
             usersTotal = o.int("users_total"),
             adminNames = o.str("admin_names"),
-            userEmails = o.str("user_emails")
+            userEmails = o.str("user_emails"),
+            plan = o.str("plan") ?: "PRO"
         )
     }
 }
@@ -167,6 +170,54 @@ data class Licence(
     }
 }
 
+/* ---- the plans (1.5.0) ---------------------------------------------- */
+
+/** One feature a plan may carry. The ids are the application's own. */
+data class PlanFeature(val id: String, val label: String)
+
+/** The catalogue, in the order the web console lists it. */
+val PLAN_FEATURES: List<PlanFeature> = listOf(
+    PlanFeature("quotation", "Quotation"),
+    PlanFeature("chat", "Company conversation (chat)"),
+    PlanFeature("notes", "Notes pad"),
+    PlanFeature("bomWorkflow", "BOM workflow automation"),
+    PlanFeature("onlinePrices", "Prices from the producer's list"),
+    PlanFeature("bagView", "3D bag view"),
+    PlanFeature("ink", "Ink assumption"),
+    PlanFeature("sharing", "Email & WhatsApp sharing"),
+    PlanFeature("exportExcel", "Export to Excel"),
+    PlanFeature("exportPdf", "Export to PDF"),
+    PlanFeature("priceHistory", "RM price history"),
+    PlanFeature("activityLog", "Activity log"),
+    PlanFeature("backup", "Backup & restore"),
+    PlanFeature("numberSeries", "Document number series"),
+    PlanFeature("tableSettings", "Table Settings")
+)
+
+fun planMatrixFrom(o: JSONObject?): Map<String, Map<String, Boolean>> {
+    if (o == null) return emptyMap()
+    val out = HashMap<String, Map<String, Boolean>>()
+    for (plan in listOf("STANDARD", "PRO")) {
+        val row = o.optJSONObject(plan) ?: continue
+        val m = HashMap<String, Boolean>()
+        PLAN_FEATURES.forEach { f -> m[f.id] = row.optBoolean(f.id, false) }
+        out[plan] = m
+    }
+    return out
+}
+
+/** A message Nexora put into every plant's conversation (1.5.0). */
+data class Broadcast(val body: String, val at: String?, val rooms: Int) {
+    val atText: String get() = Fmt.dateTime(at)
+    companion object {
+        fun from(o: JSONObject) = Broadcast(
+            body = o.str("body") ?: "",
+            at = o.str("at"),
+            rooms = o.int("rooms")
+        )
+    }
+}
+
 /** Service settings — they apply to every installation from its next check. */
 data class ServiceSettings(
     val trialDays: Int = 7,
@@ -174,7 +225,9 @@ data class ServiceSettings(
     val sessionMinutes: Int = 30,
     val expiredMode: String = "READONLY",
     val signupsOpen: Boolean = true,
-    val demoSignup: Boolean = false
+    val demoSignup: Boolean = false,
+    /* 1.5.0 — which features each plan carries: plan -> feature id -> on */
+    val planFeatures: Map<String, Map<String, Boolean>> = emptyMap()
 ) {
     companion object {
         fun from(o: JSONObject?) = if (o == null) ServiceSettings() else ServiceSettings(
@@ -183,7 +236,8 @@ data class ServiceSettings(
             sessionMinutes = o.optInt("sessionMinutes", 30),
             expiredMode = o.optString("expiredMode", "READONLY"),
             signupsOpen = o.optBoolean("signupsOpen", true),
-            demoSignup = o.optBoolean("demoSignup", false)
+            demoSignup = o.optBoolean("demoSignup", false),
+            planFeatures = planMatrixFrom(o.optJSONObject("planFeatures"))
         )
     }
 }
