@@ -52,6 +52,21 @@ class Api(private val baseUrl: String, private val key: String) {
         request("POST", "/admin/api/inquiry", body)
     }
 
+    /** 1.4.0 — feedback and problem reports sent from inside the application. */
+    suspend fun feedback(): FeedbackData = withContext(Dispatchers.IO) {
+        FeedbackData.from(request("GET", "/admin/api/feedback", null))
+    }
+
+    suspend fun feedbackAction(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        request("POST", "/admin/api/feedback", body)
+    }
+
+    /** The picture on one report, as a data URL — or null when there is none. */
+    suspend fun feedbackShot(id: Int): String? = withContext(Dispatchers.IO) {
+        request("GET", "/admin/api/feedback/shot?id=$id", null)
+            .optString("shot").takeIf { it.startsWith("data:image") }
+    }
+
     /** 4.44.0 — what build of this application the owner has published. */
     suspend fun latestRelease(): Release? = withContext(Dispatchers.IO) {
         Release.from(request("GET", "/admin/api/app/latest", null).optJSONObject("release"))

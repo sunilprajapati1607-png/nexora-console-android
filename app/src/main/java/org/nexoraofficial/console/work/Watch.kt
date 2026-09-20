@@ -71,6 +71,36 @@ class WatchWorker(context: Context, params: WorkerParameters) :
             /* Asleep, offline, or an older service: try again in fifteen minutes. */
         }
 
+        /* 1.4.0 — feedback and problem reports from inside the application.
+           A problem report is the one thing here that may mean a plant is
+           stuck, so it is named as such. */
+        try {
+            val fresh = api.feedback().feedback
+            val highest = fresh.maxOfOrNull { it.id } ?: 0
+            val seen = prefs.lastFeedbackId
+            if (seen == 0) {
+                prefs.lastFeedbackId = highest          // first run: learn, do not shout
+            } else if (highest > seen) {
+                val fresh_ = fresh.filter { it.id > seen }
+                prefs.lastFeedbackId = highest
+                val bugs = fresh_.count { it.isBug }
+                notify(
+                    applicationContext,
+                    id = 1004,
+                    title = when {
+                        fresh_.size == 1 && bugs == 1 -> "New problem report"
+                        fresh_.size == 1 -> "New feedback"
+                        bugs > 0 -> "${fresh_.size} new reports, ${bugs} problem" + (if (bugs == 1) "" else "s")
+                        else -> "${fresh_.size} new feedback"
+                    },
+                    text = fresh_.take(3).joinToString(" · ") {
+                        it.plant + " — " + (it.subject ?: it.message.take(60))
+                    }
+                )
+            }
+        } catch (_: Exception) {
+        }
+
         /* Companies — somebody registered themselves from the application. */
         try {
             val companies = api.licences().companies
@@ -146,10 +176,10 @@ class WatchWorker(context: Context, params: WorkerParameters) :
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
             val channel = NotificationChannel(
                 CHANNEL,
-                "Enquiries and registrations",
+                "Enquiries, reports and registrations",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "A new enquiry from the website, or a plant that has just registered."
+                description = "A new enquiry from the website, a feedback or problem report from a plant, or a plant that has just registered."
             }
             context.getSystemService(NotificationManager::class.java)
                 ?.createNotificationChannel(channel)

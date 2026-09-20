@@ -15,9 +15,11 @@ the same N, the same green for good news and red for bad.
 ```
 Dashboard      the figures, and what to do about them
 Enquiries      every lead, searchable, filterable, one tap to move it on
+Feedback       what the plants say from inside Nexora — feedback and problem
+               reports with the picture of their screen; one tap to call back
 Companies      the customers; tap one to open everything about it
-Machines       every installation
-More           circulars, Excel export, service settings, about, sign out
+More           the machines (every installation), circulars, Excel export,
+               service settings, about, sign out
 ```
 
 Forms open as screens of their own — New enquiry, Edit enquiry, New company —

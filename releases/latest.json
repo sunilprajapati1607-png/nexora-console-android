@@ -1,9 +1,9 @@
 {
-    "versionCode":  5,
-    "versionName":  "1.3.0",
-    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.3.0.apk",
-    "notes":  "New Update",
-    "sha256":  "35d6cc3ebdcaa55ec8cd417edebbd911b3649a94852e72c962c2aa7cfac96e58",
-    "sizeBytes":  16360076,
-    "publishedAt":  "2026-09-19T20:01:36Z"
+    "versionCode":  6,
+    "versionName":  "1.4.0",
+    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.4.0-6.apk",
+    "notes":  "Feedback and problem reports from the plants, with their screen; Feedback is on the bottom bar, Machines under More",
+    "sha256":  "986bd3f2c95e00b98a369460714becbbc3cfaac6668a68b04bc3ae999384bcec",
+    "sizeBytes":  16404012,
+    "publishedAt":  "2026-09-20T11:05:31Z"
 }

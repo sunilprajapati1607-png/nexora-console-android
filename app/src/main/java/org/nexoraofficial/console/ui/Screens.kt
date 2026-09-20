@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.automirrored.outlined.Logout
@@ -86,11 +87,19 @@ fun DashboardScreen(
                     MenuRow(Icons.Outlined.ChevronRight, "The enquiries", "${vm.openInquiries} still open") {
                         nav.switchTo(Screen.Enquiries)
                     }
+                    MenuRow(
+                        Icons.Outlined.ChevronRight,
+                        "Feedback and problem reports",
+                        if (vm.openFeedback == 0) "nothing waiting"
+                        else "${vm.openFeedback} open" + (if (vm.openBugs > 0) " · ${vm.openBugs} problem" + (if (vm.openBugs == 1) "" else "s") else "")
+                    ) {
+                        nav.switchTo(Screen.Feedback)
+                    }
                     MenuRow(Icons.Outlined.ChevronRight, "The customers", "${vm.customerCount} paying · ${vm.demoCount} on demo") {
                         nav.switchTo(Screen.Companies)
                     }
                     MenuRow(Icons.Outlined.ChevronRight, "The machines", "${vm.runningCount} running") {
-                        nav.switchTo(Screen.Machines)
+                        nav.open(Screen.Machines)
                     }
                 }
             }
@@ -293,6 +302,20 @@ fun MoreScreen(
         item {
             Box(page) {
                 ConsoleCard {
+                    Text("See", style = CardTitleStyle)
+                    Spacer(Modifier.height(10.dp))
+                    MenuRow(
+                        Icons.Outlined.Computer,
+                        "The machines",
+                        "every installation · ${vm.runningCount} running"
+                    ) { nav.open(Screen.Machines) }
+                }
+            }
+        }
+
+        item {
+            Box(page) {
+                ConsoleCard {
                     Text("Set up", style = CardTitleStyle)
                     Spacer(Modifier.height(10.dp))
                     MenuRow(
@@ -431,8 +454,9 @@ fun AboutScreen(vm: ConsoleViewModel, gutter: PaddingValues, page: Modifier) {
                     Fact("Notifications", Modifier.fillMaxWidth()) {
                         Small(
                             "This phone asks the service every fifteen minutes whether a new " +
-                                "enquiry has arrived or a plant has registered, and says so in the " +
-                                "status bar. Nothing is pushed; nothing is sent anywhere else.",
+                                "enquiry, a new feedback or problem report, or a new registration " +
+                                "has arrived, and says so in the status bar. Nothing is pushed; " +
+                                "nothing is sent anywhere else.",
                             color = c.text
                         )
                     }

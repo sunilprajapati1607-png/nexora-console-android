@@ -144,6 +144,7 @@ fun AppScaffold(vm: ConsoleViewModel) {
                         IconTap(Icons.Outlined.Refresh, "Refresh") {
                             vm.load()
                             vm.loadInquiries(quiet = true)
+                            vm.loadFeedback(quiet = true)
                         }
                     }
                     ModeSwitch(vm.dark, vm::flipMode, Modifier.padding(end = 12.dp))
@@ -214,9 +215,11 @@ fun AppScaffold(vm: ConsoleViewModel) {
                 Screen.Enquiries -> EnquiriesScreen(vm, nav, gutter, page) { ask = it }
                 Screen.Companies -> CompaniesScreen(vm, nav, gutter, page)
                 Screen.Machines -> MachinesScreen(vm, gutter, page) { ask = it }
+                Screen.Feedback -> FeedbackScreen(vm, nav, gutter, page)
                 Screen.More -> MoreScreen(vm, nav, gutter, page, exportAll)
 
                 is Screen.Company -> CompanyScreen(vm, nav, screen.id, gutter, page) { ask = it }
+                is Screen.FeedbackDetail -> FeedbackDetailScreen(vm, nav, screen.id, gutter, page) { ask = it }
                 is Screen.EnquiryForm -> EnquiryFormScreen(vm, nav, screen.id, gutter, page, wide)
                 Screen.NewCompany -> NewCompanyScreen(vm, nav, gutter, page, wide)
                 Screen.Announce -> AnnounceScreen(vm, gutter, page)
@@ -286,6 +289,7 @@ private fun titleOf(screen: Screen, vm: ConsoleViewModel): String = when (screen
     is Screen.Root -> screen.title
     is Screen.Company -> vm.data.companies.find { it.id == screen.id }?.name ?: "Company"
     is Screen.EnquiryForm -> if (screen.id == null) "New enquiry" else "Edit enquiry"
+    is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.let { if (it.isBug) "Problem report" else "Feedback" } ?: "Report"
     Screen.NewCompany -> "New company"
     Screen.Announce -> "Tell the customers"
     Screen.Settings -> "Service settings"
@@ -298,10 +302,15 @@ private fun subtitleOf(screen: Screen, vm: ConsoleViewModel): String? = when (sc
     Screen.Enquiries -> "${vm.inquiryData.inquiries.size} in all · ${vm.openInquiries} open"
     Screen.Companies -> "${vm.customerCount} customers · ${vm.demoCount} demos"
     Screen.Machines -> "${vm.data.licences.size} installed · ${vm.runningCount} running"
+    Screen.Feedback -> "${vm.feedbackData.feedback.size} in all · ${vm.openFeedback} open · ${vm.openBugs} problems"
+    is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.plant
     is Screen.Company -> vm.data.companies.find { it.id == screen.id }?.licenceKey
     else -> null
 }
 
 /** The red dot: enquiries nobody has answered yet. */
-private fun badgeFor(dest: Screen.Root, vm: ConsoleViewModel): Int =
-    if (dest == Screen.Enquiries) vm.newInquiryCount else 0
+private fun badgeFor(dest: Screen.Root, vm: ConsoleViewModel): Int = when (dest) {
+    Screen.Enquiries -> vm.newInquiryCount
+    Screen.Feedback -> vm.newFeedbackCount
+    else -> 0
+}

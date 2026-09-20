@@ -69,6 +69,7 @@ fun DashboardCard(vm: ConsoleViewModel) {
             Kpi(vm.openInquiries.toString(), "Open")
             Kpi(vm.wonInquiries.toString(), "Won")
             Kpi(due.size.toString(), "Due today")
+            Kpi(vm.openFeedback.toString(), "Reports")
         }
 
         if (total == 0) {

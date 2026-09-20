@@ -16,6 +16,13 @@ import org.nexoraofficial.console.data.Company
 import org.nexoraofficial.console.data.ConsoleData
 import org.nexoraofficial.console.data.Inquiry
 import org.nexoraofficial.console.data.InquiryData
+import org.nexoraofficial.console.data.Feedback
+import org.nexoraofficial.console.data.FeedbackData
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import org.nexoraofficial.console.data.Licence
 import org.nexoraofficial.console.data.People
 import org.nexoraofficial.console.data.Prefs
@@ -143,6 +150,17 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     var showNewInquiry by mutableStateOf(false)
     var newInquiry by mutableStateOf(InquiryForm())
 
+    /* ---- 1.4.0: feedback and problem reports from inside the application ---- */
+    var feedbackData by mutableStateOf(FeedbackData())
+        private set
+    var feedbackQuery by mutableStateOf("")
+    var feedbackKind by mutableStateOf<String?>(null)
+    var feedbackState by mutableStateOf<String?>(null)
+    /** The pictures already fetched this session; null means fetched and unreadable. */
+    val shots = mutableStateMapOf<Int, ImageBitmap?>()
+    var shotBusy by mutableStateOf<Int?>(null)
+        private set
+
     /* ---- telling every customer something at once ---- */
     var showAnnounce by mutableStateOf(false)
     var audience by mutableStateOf(Audience.ACTIVE)
@@ -222,6 +240,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 /* The leads come with everything else. Quietly: a service that
                    has not been deployed with enquiries yet should still open. */
                 loadInquiries(quiet = true)
+                loadFeedback(quiet = true)
                 /* And whether a newer build of this application exists. */
                 checkForUpdate()
             } catch (e: Exception) {
@@ -256,6 +275,94 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissMessage() {
         msg = null
+    }
+
+    /* ---------- feedback & problem reports (1.4.0) ---------- */
+
+    val feedback: List<Feedback>
+        get() = feedbackData.feedback.filter {
+            it.matches(feedbackQuery) &&
+                (feedbackKind == null || it.kind == feedbackKind) &&
+                (feedbackState == null || it.state == feedbackState)
+        }
+
+    val openFeedback get() = feedbackData.feedback.count { it.isOpen }
+    val newFeedbackCount get() = feedbackData.feedback.count { it.state == "NEW" }
+    val openBugs get() = feedbackData.feedback.count { it.isOpen && it.isBug }
+
+    fun feedbackById(id: Int): Feedback? = feedbackData.feedback.find { it.id == id }
+
+    fun loadFeedback(quiet: Boolean = false) {
+        if (key.isBlank()) return
+        viewModelScope.launch {
+            try {
+                feedbackData = api.feedback()
+            } catch (e: Exception) {
+                /* An older service has no such route; not worth a red strip. */
+                if (!quiet) say((e as? ApiError)?.message ?: "Could not read the reports.", Msg.Kind.ERR)
+            }
+        }
+    }
+
+    private fun feedbackCall(body: JSONObject, okText: String?, then: () -> Unit = {}) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.feedbackAction(body)
+                val err = r.optString("error")
+                if (err.isNotEmpty()) {
+                    say(err, Msg.Kind.ERR)
+                    return@launch
+                }
+                val warn = r.optString("warning")
+                when {
+                    warn.isNotEmpty() -> say(warn, Msg.Kind.OK)
+                    okText != null -> say(okText, Msg.Kind.OK)
+                }
+                then()
+                loadFeedback()
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun setFeedbackState(id: Int, state: String) =
+        feedbackCall(JSONObject().put("action", "state").put("id", id).put("state", state), null)
+
+    fun replyFeedback(id: Int, note: String) =
+        feedbackCall(JSONObject().put("action", "reply").put("id", id).put("reply", note), "Note saved.")
+
+    fun deleteFeedback(id: Int, then: () -> Unit = {}) =
+        feedbackCall(JSONObject().put("action", "delete").put("id", id), "Removed.") {
+            shots.remove(id)
+            then()
+        }
+
+    /** The picture on a report, fetched once and kept for the session. */
+    fun loadShot(id: Int) {
+        if (shots.containsKey(id) || shotBusy == id) return
+        viewModelScope.launch {
+            shotBusy = id
+            try {
+                val s = api.feedbackShot(id)
+                shots[id] = s?.let { decodeShot(it) }
+            } catch (e: Exception) {
+                shots[id] = null
+                say((e as? ApiError)?.message ?: "Could not fetch the picture.", Msg.Kind.ERR)
+            } finally {
+                if (shotBusy == id) shotBusy = null
+            }
+        }
+    }
+
+    private fun decodeShot(dataUrl: String): ImageBitmap? = try {
+        val bytes = Base64.decode(dataUrl.substringAfter("base64,"), Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    } catch (_: Exception) {
+        null
     }
 
     /* ---------- companies ---------- */

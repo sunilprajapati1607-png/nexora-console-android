@@ -281,6 +281,99 @@ data class Inquiry(
     }
 }
 
+/**
+ * A report from inside the application — Help → Nexora Contact. FEEDBACK
+ * is words; a BUG usually carries a picture of the screen, which is not in
+ * this object: it is fetched on its own when the report is opened.
+ */
+data class Feedback(
+    val id: Int,
+    val kind: String,
+    val subject: String?,
+    val message: String,
+    val name: String?,
+    val phone: String?,
+    val email: String?,
+    val company: String?,
+    val companyId: Int?,
+    val coName: String?,
+    val licenceKey: String?,
+    val userName: String?,
+    val deviceId: String?,
+    val deviceName: String?,
+    val appVersion: String?,
+    val edition: String?,
+    val view: String?,
+    val hasShot: Boolean,
+    val state: String,
+    val reply: String?,
+    val createdAt: String?,
+    val updatedAt: String?
+) {
+    val isBug: Boolean get() = kind == "BUG"
+    val isOpen: Boolean get() = state == "NEW" || state == "SEEN"
+    val plant: String get() = coName ?: company ?: "Unknown plant"
+    val who: String? get() = name?.takeIf { it.isNotBlank() } ?: userName?.takeIf { it.isNotBlank() }
+
+    fun matches(term: String): Boolean {
+        if (term.isBlank()) return true
+        val t = term.lowercase()
+        return listOf(subject, message, name, userName, company, coName, deviceName, view, reply, appVersion)
+            .any { it?.lowercase()?.contains(t) == true }
+    }
+
+    companion object {
+        fun from(o: JSONObject) = Feedback(
+            id = o.optInt("id"),
+            kind = o.str("kind") ?: "FEEDBACK",
+            subject = o.str("subject"),
+            message = o.str("message") ?: "",
+            name = o.str("name"),
+            phone = o.str("phone"),
+            email = o.str("email"),
+            company = o.str("company"),
+            companyId = o.optInt("companyId").takeIf { it > 0 },
+            coName = o.str("coName"),
+            licenceKey = o.str("licenceKey"),
+            userName = o.str("userName"),
+            deviceId = o.str("deviceId"),
+            deviceName = o.str("deviceName"),
+            appVersion = o.str("appVersion"),
+            edition = o.str("edition"),
+            view = o.str("view"),
+            hasShot = o.optBoolean("hasShot", false),
+            state = o.str("state") ?: "NEW",
+            reply = o.str("reply"),
+            createdAt = o.str("createdAt"),
+            updatedAt = o.str("updatedAt")
+        )
+    }
+}
+
+/** Everything /admin/api/feedback answers with. */
+data class FeedbackData(
+    val feedback: List<Feedback> = emptyList(),
+    val kinds: List<String> = listOf("FEEDBACK", "BUG"),
+    val states: List<String> = listOf("NEW", "SEEN", "FIXED", "CLOSED")
+) {
+    companion object {
+        fun from(o: JSONObject): FeedbackData {
+            fun strings(k: String, dflt: List<String>): List<String> {
+                val a = o.optJSONArray(k) ?: return dflt
+                val out = (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() }
+                return out.ifEmpty { dflt }
+            }
+            val a = o.optJSONArray("feedback")
+            return FeedbackData(
+                feedback = if (a == null) emptyList()
+                else (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { Feedback.from(it) } },
+                kinds = strings("kinds", listOf("FEEDBACK", "BUG")),
+                states = strings("states", listOf("NEW", "SEEN", "FIXED", "CLOSED"))
+            )
+        }
+    }
+}
+
 /** Everything /admin/api/inquiries answers with, lists included. */
 data class InquiryData(
     val inquiries: List<Inquiry> = emptyList(),

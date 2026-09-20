@@ -43,6 +43,11 @@ class Prefs(context: Context) {
         get() = p.getInt(LAST_COMPANIES, -1)
         set(v) = p.edit().putInt(LAST_COMPANIES, v).apply()
 
+    /* 1.4.0 — the newest report already announced; 0 means learn quietly. */
+    var lastFeedbackId: Int
+        get() = p.getInt(LAST_FEEDBACK, 0)
+        set(v) = p.edit().putInt(LAST_FEEDBACK, v).apply()
+
     /* The newest build this phone has already been told about, so a notice
        is given once per version and not every quarter of an hour. */
     var lastOfferedVersion: Int
@@ -62,6 +67,7 @@ class Prefs(context: Context) {
         const val REMEMBER = "rememberKey"
         const val LAST_INQUIRY = "lastInquiryId"
         const val LAST_COMPANIES = "lastCompanyCount"
+        const val LAST_FEEDBACK = "lastFeedbackId"
         const val WATCHING = "watching"
         const val LAST_OFFERED = "lastOfferedVersion"
     }

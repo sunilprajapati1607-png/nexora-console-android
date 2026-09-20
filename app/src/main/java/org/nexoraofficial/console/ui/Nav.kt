@@ -3,6 +3,7 @@ package org.nexoraofficial.console.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.QuestionAnswer
@@ -41,6 +42,12 @@ sealed interface Screen {
         override val icon = Icons.Outlined.QuestionAnswer
     }
 
+    /** 1.4.0 — what the plants say from inside the application. */
+    data object Feedback : Root {
+        override val title = "Feedback"
+        override val icon = Icons.Outlined.Feedback
+    }
+
     data object Companies : Root {
         override val title = "Companies"
         override val icon = Icons.Outlined.Business
@@ -64,13 +71,20 @@ sealed interface Screen {
     /** New when id is null, editing otherwise. */
     data class EnquiryForm(val id: Int?) : Screen
 
+    /** One report, with its picture and what can be done about it. */
+    data class FeedbackDetail(val id: Int) : Screen
+
     data object NewCompany : Screen
     data object Announce : Screen
     data object Settings : Screen
     data object About : Screen
 }
 
-val ROOTS = listOf(Screen.Dashboard, Screen.Enquiries, Screen.Companies, Screen.Machines, Screen.More)
+/* 1.4.0 — Feedback took the fourth place. Machines is still a Root (it
+   keeps its title and icon) but is reached from the Dashboard and More:
+   a report from a plant is looked at every day, the list of every
+   installation is not. */
+val ROOTS = listOf(Screen.Dashboard, Screen.Enquiries, Screen.Feedback, Screen.Companies, Screen.More)
 
 /**
  * The back stack. The bottom of it is always a root, so Back can never empty
