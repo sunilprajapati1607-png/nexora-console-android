@@ -191,7 +191,11 @@ val PLAN_FEATURES: List<PlanFeature> = listOf(
     PlanFeature("activityLog", "Activity log"),
     PlanFeature("backup", "Backup & restore"),
     PlanFeature("numberSeries", "Document number series"),
-    PlanFeature("tableSettings", "Table Settings")
+    PlanFeature("tableSettings", "Table Settings"),
+    /* 4.51.0 — the BOM fills a section nobody has saved from what this
+       plant itself usually does on that process. Sold per plan like the
+       rest; with it off a plant works the old way and presses Suggest. */
+    PlanFeature("sectionSuggest", "BOM sections learned from the plant")
 )
 
 fun planMatrixFrom(o: JSONObject?): Map<String, Map<String, Boolean>> {

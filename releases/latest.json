@@ -1,9 +1,9 @@
 {
-    "versionCode": 7,
-    "versionName": "1.5.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.0-7.apk",
-    "notes": "Plans (what Standard and Pro carry, per feature), Message every plant (as Nexora, into each company’s conversation), and each company’s plan on its card",
-    "sha256": "debdfc5a05f28fd6952311286e965575291d7cb705fc3afcfd9238480c1d9206",
-    "sizeBytes": 16425224,
-    "publishedAt": "2026-09-20T19:00:19.703Z"
+    "versionCode":  8,
+    "versionName":  "1.5.1",
+    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.1-8.apk",
+    "notes":  "BOM sections learned from the plant, in the plan matrix",
+    "sha256":  "e771d010026938784c8d329d74a9fbe908215e8988b8fd612f31010d0bfea1ac",
+    "sizeBytes":  16425232,
+    "publishedAt":  "2026-09-21T09:04:47Z"
 }
