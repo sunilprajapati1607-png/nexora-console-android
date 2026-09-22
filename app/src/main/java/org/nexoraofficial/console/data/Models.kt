@@ -194,8 +194,16 @@ val PLAN_FEATURES: List<PlanFeature> = listOf(
     PlanFeature("tableSettings", "Table Settings"),
     /* 4.51.0 — the BOM fills a section nobody has saved from what this
        plant itself usually does on that process. Sold per plan like the
-       rest; with it off a plant works the old way and presses Suggest. */
-    PlanFeature("sectionSuggest", "BOM sections learned from the plant")
+       rest; with it off a plant works the old way and presses Suggest.
+
+       4.55.0 — RENAMED. It read "BOM sections learned from the plant",
+       which describes one thing it does. It now also matches a saved
+       workflow to a calculation and says why, and gives a stage its shape
+       from the process when nothing has been learned at all. The owner
+       sells it as the learning itself, beside workflow automation, so the
+       console says what it is. The id is unchanged: a licence in the
+       field still gates on sectionSuggest. */
+    PlanFeature("sectionSuggest", "BOM learning (MLM)")
 )
 
 fun planMatrixFrom(o: JSONObject?): Map<String, Map<String, Boolean>> {
