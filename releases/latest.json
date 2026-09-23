@@ -1,9 +1,9 @@
 {
-  "versionCode": 10,
-  "versionName": "1.5.3",
-  "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.3-10.apk",
-  "notes": "Last signed in with the time, last active, a Refresh that says when it last looked, and when each demo or licence started.",
-  "sha256": "c8638c6f30c758f9e364e38d018605b69c4fde9d94fc1e0d4b6ac44989b07c30",
-  "sizeBytes": 16429104,
-  "publishedAt": "2026-09-23T15:09:34Z"
+    "versionCode":  11,
+    "versionName":  "y",
+    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-y-11.apk",
+    "notes":  "y",
+    "sha256":  "591e986b4419408fa75fecbff9b762b4acd2798de6318f021c0c77bf291defe7",
+    "sizeBytes":  16429044,
+    "publishedAt":  "2026-09-23T15:40:32Z"
 }
