@@ -35,6 +35,11 @@ data class Company(
     val graceDays: Int,
     val isDemo: Boolean,
     val expiresAt: String?,
+    /* 4.57.0 - when THIS stretch began, and how many days it runs for.
+       expiresAt alone gave a days-left count with no scale: three of
+       seven is a demo lapsing this week, three of 365 is next year. */
+    val periodStartedAt: String?,
+    val periodDays: Int,
     val txnLimit: Int,
     val txnUsed: Int,
     val usageMinutes: Int,
@@ -82,6 +87,8 @@ data class Company(
             graceDays = o.int("grace_days"),
             isDemo = o.bool("is_demo"),
             expiresAt = o.str("expires_at"),
+            periodStartedAt = o.str("period_started_at"),
+            periodDays = o.int("period_days"),
             txnLimit = o.int("txn_limit"),
             txnUsed = o.int("txn_used"),
             usageMinutes = o.int("usage_minutes"),

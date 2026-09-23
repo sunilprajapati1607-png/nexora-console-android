@@ -168,8 +168,21 @@ private fun FactsCard(company: Company) {
             }
         }
 
+        /* 4.57.0 - WHEN IT STARTED, beside when it ends.
+
+             "licence ke demo kai date thi start thayo ane kyare patese"
+
+           The card gave a days-left count and the date it ends, and said
+           nothing about the other end of the clock - so a number had no
+           scale to be read against. */
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Fact(if (company.isDemo) "Demo started" else "Licence started", Modifier.weight(1f)) {
+                FactValue(Fmt.day(company.periodStartedAt))
+                if (company.periodDays > 0) {
+                    Small("${company.periodDays}-day " + (if (company.isDemo) "demo" else "licence"))
+                }
+            }
             Fact(
                 when (state) {
                     "EXPIRED" -> "Ended"
@@ -185,20 +198,25 @@ private fun FactsCard(company: Company) {
                     Small(Fmt.day(company.expiresAt))
                 }
             }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Fact("Offline allowed", Modifier.weight(1f)) {
                 FactValue(if (company.graceDays > 0) "${company.graceDays} days" else "none")
                 if (company.graceDays == 0) Small("stops when it cannot reach the service")
+            }
+            Fact("Hours in use", Modifier.weight(1f)) {
+                FactValue(Fmt.hours(company.usageMinutes))
             }
         }
 
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Fact("Hours in use", Modifier.weight(1f)) {
-                FactValue(Fmt.hours(company.usageMinutes))
-            }
             Fact("Transactions", Modifier.weight(1f)) {
                 TransactionsFigure(company.txnUsed, company.txnLimit)
             }
+            Spacer(Modifier.weight(1f))
         }
     }
 }
