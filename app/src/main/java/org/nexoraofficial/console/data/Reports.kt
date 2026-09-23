@@ -101,14 +101,15 @@ object Reports {
 
     private fun peopleSheet(people: List<Person>) = Xlsx.Sheet(
         name = "People",
-        header = listOf("Name", "Role", "Sees", "Switched on", "Last signed in"),
+        header = listOf("Name", "Role", "Sees", "Switched on", "Last signed in", "Last active"),
         rows = people.map { u ->
             listOf(
                 Xlsx.text(u.name),
                 Xlsx.text(if (u.isAdmin) "administrator" else "user"),
                 Xlsx.text(if (u.scope == "ALL") "everyone's work" else "own work"),
                 Xlsx.text(if (u.active) "yes" else "no"),
-                Xlsx.text(if (u.lastLoginAt != null) Fmt.day(u.lastLoginAt) else "never")
+                Xlsx.text(if (u.lastLoginAt != null) Fmt.dateTime(u.lastLoginAt) else "never"),
+                Xlsx.text(if (u.lastSeenAt != null) Fmt.dateTime(u.lastSeenAt) else "-")
             )
         }
     )

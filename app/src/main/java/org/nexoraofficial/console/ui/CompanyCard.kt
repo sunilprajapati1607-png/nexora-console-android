@@ -249,9 +249,21 @@ private fun PeopleCard(company: Company, vm: ConsoleViewModel, onAsk: (Ask) -> U
 
     val people = vm.people
 
+    /* 4.58.1 — who is signed in, and when they were last active, keep
+       themselves current while this company is open: once a minute, quietly */
+    LaunchedEffect(company.id) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000)
+            vm.loadPeople(company.id, quiet = true)
+        }
+    }
+
     ConsoleCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("People", style = CardTitleStyle, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("People", style = CardTitleStyle)
+                vm.refreshedAt?.let { Small("updated $it") }
+            }
             ConsoleButton("Refresh", { vm.loadPeople(company.id) }, small = true)
         }
 
@@ -319,9 +331,13 @@ private fun PersonRow(company: Company, u: Person, vm: ConsoleViewModel, onAsk: 
         }
         Small(
             (if (u.scope == "ALL") "sees everyone's work" else "sees own work") + " · " +
-                (if (u.lastLoginAt != null) "last signed in ${Fmt.day(u.lastLoginAt)}"
+                (if (u.lastLoginAt != null) "last signed in ${Fmt.dateTime(u.lastLoginAt)}"
                 else "never signed in")
         )
+        /* 4.58.1 — when their software last spoke to the service */
+        if (u.lastSeenAt != null) {
+            Small("active ${Fmt.ago(u.lastSeenAt)} (${Fmt.dateTime(u.lastSeenAt)})", color = c.ok)
+        }
         if (u.email != null) {
             Mono(u.email, color = MaterialTheme.colorScheme.primary)
         } else {

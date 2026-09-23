@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.data.Api
 import org.nexoraofficial.console.data.ApiError
 import org.nexoraofficial.console.data.Audience
@@ -224,7 +225,19 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         if (!signedIn && key.isNotBlank()) load()
     }
 
-    fun load(onDone: (() -> Unit)? = null) {
+    /* 4.58.1 — when the last good read came in, shown beside People */
+    var refreshedAt by mutableStateOf<String?>(null)
+
+    /** 4.58.1 — "refresh is not working proper": it worked, but said
+     *  nothing, so a press that succeeded looked like one that did not.
+     *  The icon's press now says so either way. */
+    fun refreshNow() {
+        load(announce = true)
+        loadInquiries(quiet = true)
+        loadFeedback(quiet = true)
+    }
+
+    fun load(onDone: (() -> Unit)? = null, announce: Boolean = false) {
         if (key.isBlank()) {
             gateError = "Enter the admin key to open the console."
             return
@@ -234,6 +247,8 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val fresh = api.licences()
                 data = fresh
+                refreshedAt = Fmt.clock()
+                if (announce) say("Up to date \u2014 " + refreshedAt, Msg.Kind.OK)
                 settingsForm = SettingsForm.of(fresh.settings)
                 planMatrix = fresh.settings.planFeatures
                 gateError = null
@@ -509,13 +524,18 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
 
     /* ---------- the people on a company ---------- */
 
-    fun loadPeople(companyId: Int) {
+    /** quiet = the once-a-minute read while a company is open: what is on
+     *  screen stays until the answer is in, and a failed read leaves it. */
+    fun loadPeople(companyId: Int, quiet: Boolean = false) {
         viewModelScope.launch {
             peopleBusy = true
-            peopleError = null
+            if (!quiet) peopleError = null
             try {
                 people = api.people(companyId)
+                peopleError = null
+                refreshedAt = Fmt.clock()
             } catch (e: Exception) {
+                if (quiet) return@launch
                 people = null
                 peopleError = (e as? ApiError)?.message ?: "Something went wrong."
             } finally {

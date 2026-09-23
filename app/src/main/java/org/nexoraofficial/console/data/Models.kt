@@ -272,6 +272,10 @@ data class Person(
     val scope: String,
     val active: Boolean,
     val lastLoginAt: String?,
+    /* 4.58.1 — the last time their software spoke to the service. A
+       remembered session never types the PIN again, so "signed in" alone
+       stood still while the person worked every day. */
+    val lastSeenAt: String?,
     /* 4.43.0 — one person is signed in at one place at a time. This is that
        place, and when they took it; it is the first thing asked when somebody
        rings to say they cannot get in. */
@@ -290,6 +294,7 @@ data class Person(
             scope = o.optString("scope", "OWN"),
             active = o.optBoolean("active", true),
             lastLoginAt = o.str("lastLoginAt"),
+            lastSeenAt = o.str("lastSeenAt"),
             sessionDevice = o.str("sessionDevice"),
             sessionAt = o.str("sessionAt")
         )
@@ -520,6 +525,22 @@ object Fmt {
         return DateTimeFormatter.ofPattern("dd MMM yy, HH:mm", Locale.getDefault())
             .format(i.atZone(ZoneId.systemDefault()))
     }
+
+    /** 4.58.1 — "just now", "12 min ago", "3 h ago", "4 days ago". */
+    fun ago(iso: String?): String {
+        val i = instant(iso) ?: return ""
+        val s = java.time.Duration.between(i, Instant.now()).seconds.coerceAtLeast(0)
+        if (s < 60) return "just now"
+        val m = (s + 30) / 60
+        if (m < 60) return "$m min ago"
+        val h = (m + 30) / 60
+        if (h < 48) return "$h h ago"
+        return "${(h + 12) / 24} days ago"
+    }
+
+    /** 4.58.1 — the clock time alone, for "up to date — 16:42:05". */
+    fun clock(): String = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.getDefault())
+        .format(Instant.now().atZone(ZoneId.systemDefault()))
 
     /** hoursText() — "3 h 20 m", or "20 m" under the hour. */
     fun hours(mins: Int): String {

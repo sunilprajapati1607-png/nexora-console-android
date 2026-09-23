@@ -141,11 +141,7 @@ fun AppScaffold(vm: ConsoleViewModel) {
                     if (vm.busy) {
                         Text("…", color = c.muted, fontSize = 20.sp, modifier = Modifier.padding(end = 6.dp))
                     } else {
-                        IconTap(Icons.Outlined.Refresh, "Refresh") {
-                            vm.load()
-                            vm.loadInquiries(quiet = true)
-                            vm.loadFeedback(quiet = true)
-                        }
+                        IconTap(Icons.Outlined.Refresh, "Refresh") { vm.refreshNow() }
                     }
                     ModeSwitch(vm.dark, vm::flipMode, Modifier.padding(end = 12.dp))
                 },
