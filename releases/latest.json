@@ -1,9 +1,9 @@
 {
-    "versionCode":  8,
-    "versionName":  "1.5.1",
-    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.1-8.apk",
-    "notes":  "BOM sections learned from the plant, in the plan matrix",
-    "sha256":  "e771d010026938784c8d329d74a9fbe908215e8988b8fd612f31010d0bfea1ac",
-    "sizeBytes":  16425232,
-    "publishedAt":  "2026-09-21T09:04:47Z"
+  "versionCode": 10,
+  "versionName": "1.5.3",
+  "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.3-10.apk",
+  "notes": "Last signed in with the time, last active, a Refresh that says when it last looked, and when each demo or licence started.",
+  "sha256": "c8638c6f30c758f9e364e38d018605b69c4fde9d94fc1e0d4b6ac44989b07c30",
+  "sizeBytes": 16429104,
+  "publishedAt": "2026-09-23T15:09:34Z"
 }

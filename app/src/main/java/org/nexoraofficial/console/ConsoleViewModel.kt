@@ -231,10 +231,11 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     /** 4.58.1 — "refresh is not working proper": it worked, but said
      *  nothing, so a press that succeeded looked like one that did not.
      *  The icon's press now says so either way. */
+    /* load() already fetches the enquiries, the feedback and the broadcasts
+       once the companies have arrived; asking for them here as well sent every
+       one of those requests twice per tap. */
     fun refreshNow() {
         load(announce = true)
-        loadInquiries(quiet = true)
-        loadFeedback(quiet = true)
     }
 
     fun load(onDone: (() -> Unit)? = null, announce: Boolean = false) {
