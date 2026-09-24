@@ -1,9 +1,9 @@
 {
-    "versionCode":  11,
-    "versionName":  "y",
-    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-y-11.apk",
-    "notes":  "y",
-    "sha256":  "591e986b4419408fa75fecbff9b762b4acd2798de6318f021c0c77bf291defe7",
-    "sizeBytes":  16429044,
-    "publishedAt":  "2026-09-23T15:40:32Z"
+    "versionCode":  12,
+    "versionName":  "1.5.4",
+    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.4-12.apk",
+    "notes":  "The plan carries Price Impact, Compare and Target Cost",
+    "sha256":  "344a0f35af3a1a18d73c98f305c0ef24d1e46f9adc09023dc3a5c4a1f6e9cea1",
+    "sizeBytes":  16429228,
+    "publishedAt":  "2026-09-24T16:30:32Z"
 }
