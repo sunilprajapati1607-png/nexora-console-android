@@ -210,7 +210,13 @@ val PLAN_FEATURES: List<PlanFeature> = listOf(
        sells it as the learning itself, beside workflow automation, so the
        console says what it is. The id is unchanged: a licence in the
        field still gates on sectionSuggest. */
-    PlanFeature("sectionSuggest", "BOM learning (MLM)")
+    PlanFeature("sectionSuggest", "BOM learning (MLM)"),
+    /* 4.65.0 — "in console under plan add these all feature": the three
+       cost tools of the desktop app, each its own line on the plan. The
+       ids are the app's and the service's own. */
+    PlanFeature("priceImpact", "Price Impact"),
+    PlanFeature("compare", "Compare calculations"),
+    PlanFeature("targetCost", "Target Cost")
 )
 
 fun planMatrixFrom(o: JSONObject?): Map<String, Map<String, Boolean>> {
