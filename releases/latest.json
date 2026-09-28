@@ -1,9 +1,9 @@
 {
-    "versionCode":  13,
+    "versionCode":  14,
     "versionName":  "1.5.5",
-    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.5-13.apk",
-    "notes":  "Republished so every phone is offered a fresh download",
-    "sha256":  "dc156fa0986f7ab0441500007f717fffe19eec19253a56df38569098f2c47607",
+    "url":  "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.5.5-14.apk",
+    "notes":  "Version 1.5.5",
+    "sha256":  "6d7286e03f5c8d039405bab69014d6f46bd86a96bb41ff970666ace5faf47bd5",
     "sizeBytes":  16429224,
-    "publishedAt":  "2026-09-24T20:57:10Z"
+    "publishedAt":  "2026-09-28T06:21:24Z"
 }

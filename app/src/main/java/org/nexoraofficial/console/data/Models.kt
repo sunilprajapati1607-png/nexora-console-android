@@ -216,7 +216,11 @@ val PLAN_FEATURES: List<PlanFeature> = listOf(
        ids are the app's and the service's own. */
     PlanFeature("priceImpact", "Price Impact"),
     PlanFeature("compare", "Compare calculations"),
-    PlanFeature("targetCost", "Target Cost")
+    PlanFeature("targetCost", "Target Cost"),
+    /* 2026-09-28 — Nexora Mobile (licence A: one phone per person, PRO only). Listed here as well as
+       in the service's plans.js and the web console, or saving the plan matrix from this app would
+       switch it off. */
+    PlanFeature("mobile", "Nexora Mobile (Android app)")
 )
 
 fun planMatrixFrom(o: JSONObject?): Map<String, Map<String, Boolean>> {

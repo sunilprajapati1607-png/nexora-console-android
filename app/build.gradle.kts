@@ -11,7 +11,7 @@ android {
         applicationId = "org.nexoraofficial.console"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
+        versionCode = 14
         versionName = "1.5.5"
 
         /* The service the console talks to. Changed here, not in code, so a
