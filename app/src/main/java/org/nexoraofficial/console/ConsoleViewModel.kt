@@ -110,14 +110,15 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     var key by mutableStateOf(prefs.adminKey)
     var baseUrl by mutableStateOf(prefs.baseUrl)
     var rememberKey by mutableStateOf(prefs.rememberKey)
+    /* 1.6.0 — internal (not private) so the screenshot suite can draw a signed-in console from sample companies */
     var signedIn by mutableStateOf(false)
-        private set
+        internal set
     var gateError by mutableStateOf<String?>(null)
         private set
 
     /* ---- the page ---- */
     var data by mutableStateOf(ConsoleData())
-        private set
+        internal set
     var busy by mutableStateOf(false)
         private set
     var msg by mutableStateOf<Msg?>(null)
@@ -191,7 +192,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
 
     /* ---- light and dark, remembered exactly as the console remembers it ---- */
     var dark by mutableStateOf(false)
-        private set
+        internal set
 
     fun startMode(systemDark: Boolean) {
         dark = when (prefs.mode) {
@@ -455,6 +456,11 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setTxnLimit(id: Int, limit: Int) =
         companyAction(JSONObject().put("id", id).put("action", "txnlimit").put("txnLimit", limit))
+
+    /** 1.6.0 — Nexora AI questions a day for this company (0 = the service's own number). */
+    fun setAiLimit(id: Int, limit: Int) =
+        companyAction(JSONObject().put("id", id).put("action", "ailimit").put("aiDailyLimit", limit),
+            okText = if (limit > 0) "Nexora AI: $limit questions a day." else "Nexora AI: the service's own number a day.")
 
     fun resetUsage(id: Int, name: String) =
         companyAction(

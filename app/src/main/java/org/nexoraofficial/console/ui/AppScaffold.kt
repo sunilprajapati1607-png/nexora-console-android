@@ -286,19 +286,20 @@ fun IconTap(
 private fun titleOf(screen: Screen, vm: ConsoleViewModel): String = when (screen) {
     is Screen.Root -> screen.title
     is Screen.Company -> vm.data.companies.find { it.id == screen.id }?.name ?: "Company"
-    is Screen.EnquiryForm -> if (screen.id == null) "New enquiry" else "Edit enquiry"
-    is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.let { if (it.isBug) "Problem report" else "Feedback" } ?: "Report"
-    Screen.NewCompany -> "New company"
-    Screen.Announce -> "Tell the customers"
-    Screen.Settings -> "Service settings"
+    /* 1.6.0 — headings in Proper Case (a company's own name is shown as it was typed) */
+    is Screen.EnquiryForm -> if (screen.id == null) "New Enquiry" else "Edit Enquiry"
+    is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.let { if (it.isBug) "Problem Report" else "Feedback" } ?: "Report"
+    Screen.NewCompany -> "New Company"
+    Screen.Announce -> "Tell The Customers"
+    Screen.Settings -> "Service Settings"
     Screen.Plans -> "Plans"
-    Screen.Broadcast -> "Message every plant"
+    Screen.Broadcast -> "Message Every Plant"
     Screen.About -> "About"
 }
 
 @Composable
 private fun subtitleOf(screen: Screen, vm: ConsoleViewModel): String? = when (screen) {
-    Screen.Dashboard -> "Nexora licence console"
+    Screen.Dashboard -> "Nexora Licence Console"
     Screen.Enquiries -> "${vm.inquiryData.inquiries.size} in all · ${vm.openInquiries} open"
     Screen.Companies -> "${vm.customerCount} customers · ${vm.demoCount} demos"
     Screen.Machines -> "${vm.data.licences.size} installed · ${vm.runningCount} running"

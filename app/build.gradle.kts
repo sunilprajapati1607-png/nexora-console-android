@@ -11,8 +11,8 @@ android {
         applicationId = "org.nexoraofficial.console"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "1.5.5"
+        versionCode = 15
+        versionName = "1.6.0"
 
         /* The service the console talks to. Changed here, not in code, so a
            staging build is one line. It is also overridable at run time from
@@ -41,6 +41,11 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        /* 1.6.0 — every screen drawn on the computer, phone-sized, from sample companies (as Nexora Mobile) */
+        unitTests.all { it.systemProperty("roborazzi.test.record", "true") }
+    }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
@@ -64,4 +69,13 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.12.2")
+    testImplementation("androidx.test:core:1.5.0")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.13.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.13.0")
 }

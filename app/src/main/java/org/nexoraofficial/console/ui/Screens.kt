@@ -27,6 +27,13 @@ import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.Business
+import androidx.compose.material.icons.outlined.HourglassTop
+import androidx.compose.material.icons.outlined.QuestionAnswer
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.Feedback
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.automirrored.outlined.Logout
@@ -78,34 +85,52 @@ fun DashboardScreen(
             item { Box(page) { UpdateCard(vm) } }
         }
 
-        item { Box(page) { DashboardCard(vm) } }
-
-        /* The dashboard is a summary, so everything on it leads somewhere. */
+        /* 1.6.0 — "make them more flexi like weight calcuation android app": the greeting on the logo's sweep,
+           each kind of thing in its own colour, and every tile and card leads somewhere */
         item {
-            Box(page) {
-                ConsoleCard {
-                    Text("Go to", style = CardTitleStyle)
+            Box(page.appear(0)) {
+                GradientBanner {
+                    Text("Namaste", style = MaterialTheme.typography.headlineSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text("Nexora Licence Console", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
                     Spacer(Modifier.height(10.dp))
-                    MenuRow(Icons.Outlined.ChevronRight, "The enquiries", "${vm.openInquiries} still open") {
-                        nav.switchTo(Screen.Enquiries)
-                    }
-                    MenuRow(
-                        Icons.Outlined.ChevronRight,
-                        "Feedback and problem reports",
-                        if (vm.openFeedback == 0) "nothing waiting"
-                        else "${vm.openFeedback} open" + (if (vm.openBugs > 0) " · ${vm.openBugs} problem" + (if (vm.openBugs == 1) "" else "s") else "")
-                    ) {
-                        nav.switchTo(Screen.Feedback)
-                    }
-                    MenuRow(Icons.Outlined.ChevronRight, "The customers", "${vm.customerCount} paying · ${vm.demoCount} on demo") {
-                        nav.switchTo(Screen.Companies)
-                    }
-                    MenuRow(Icons.Outlined.ChevronRight, "The machines", "${vm.runningCount} running") {
-                        nav.open(Screen.Machines)
-                    }
+                    Text("${vm.customerCount} paying · ${vm.demoCount} on demo · ${vm.runningCount} computers running",
+                        style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.92f))
                 }
             }
         }
+        item {
+            Column(page.appear(1), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                TileRow {
+                    BigTile(Icons.Outlined.Business, vm.customerCount.toString(), "Customers", "customer", { nav.switchTo(Screen.Companies) }, Modifier.weight(1f))
+                    BigTile(Icons.Outlined.HourglassTop, vm.demoCount.toString(), "Demos", "demo", { nav.switchTo(Screen.Companies) }, Modifier.weight(1f))
+                    BigTile(Icons.Outlined.Computer, vm.runningCount.toString(), "Running", "machine", { nav.open(Screen.Machines) }, Modifier.weight(1f))
+                }
+                TileRow {
+                    BigTile(Icons.Outlined.QuestionAnswer, vm.openInquiries.toString(), "Open enquiries", "enquiry", { nav.switchTo(Screen.Enquiries) }, Modifier.weight(1f))
+                    BigTile(Icons.Outlined.EmojiEvents, vm.wonInquiries.toString(), "Won", "money", { nav.switchTo(Screen.Enquiries) }, Modifier.weight(1f))
+                    BigTile(Icons.Outlined.Feedback, vm.openFeedback.toString(), "Reports", if (vm.openBugs > 0) "bad" else "grey", { nav.switchTo(Screen.Feedback) }, Modifier.weight(1f))
+                }
+            }
+        }
+        item {
+            Column(page, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ActionCard(Icons.Outlined.QuestionAnswer, "The enquiries", "${vm.openInquiries} still open · ${vm.newInquiryCount} new", "enquiry", 2) {
+                    nav.switchTo(Screen.Enquiries)
+                }
+                ActionCard(Icons.Outlined.Feedback, "Feedback and problem reports",
+                    if (vm.openFeedback == 0) "nothing waiting"
+                    else "${vm.openFeedback} open" + (if (vm.openBugs > 0) " · ${vm.openBugs} problem" + (if (vm.openBugs == 1) "" else "s") else ""),
+                    if (vm.openBugs > 0) "bad" else "amber", 3) { nav.switchTo(Screen.Feedback) }
+                ActionCard(Icons.Outlined.Business, "The customers", "${vm.customerCount} paying · ${vm.demoCount} on demo", "customer", 4) {
+                    nav.switchTo(Screen.Companies)
+                }
+                ActionCard(Icons.Outlined.Computer, "The machines", "${vm.runningCount} running · ${vm.data.licences.size} installed", "machine", 5) {
+                    nav.open(Screen.Machines)
+                }
+            }
+        }
+
+        item { Box(page) { DashboardCard(vm) } }
     }
 }
 
@@ -187,24 +212,23 @@ fun CompaniesScreen(
     }
 }
 
-/** A customer in the list: enough to recognise and choose, not everything. */
+/** A customer in the list: enough to recognise and choose, not everything. 1.6.0 — a colour edge for its state
+ *  (licensed blue, demo teal, expired amber, suspended red), as Nexora Mobile marks each kind of record. */
 @Composable
 private fun CompanyRow(company: Company, onOpen: () -> Unit) {
     val c = LocalNexora.current
     val state = company.shownState
+    val a = Kinds.state(state, c.isDark)
 
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .appear()
+            .clip(RoundedCornerShape(14.dp))
             .background(c.surface)
-            .border(
-                1.dp,
-                if (company.state == "SUSPENDED") c.bad else c.border,
-                RoundedCornerShape(12.dp)
-            )
-            .drawAccentEdge(c.accent)
-            .clickable(onClick = onOpen)
+            .border(1.dp, a.fg.copy(alpha = 0.28f), RoundedCornerShape(14.dp))
+            .drawAccentEdge(a.fg, alpha = 1f)
+            .pressable(onOpen)
             .padding(horizontal = 15.dp, vertical = 13.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -237,11 +261,10 @@ private fun Mini(label: String, value: String) {
     val c = LocalNexora.current
     Column {
         Text(
-            label.uppercase(),
+            label.proper(),
             color = c.muted,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 0.4.sp
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
         )
         Text(value, color = c.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
     }
@@ -399,7 +422,7 @@ fun MenuRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                title,
+                title.proper(),
                 color = if (danger) c.bad else c.text,
                 fontSize = 14.5f.sp,
                 fontWeight = FontWeight.Bold

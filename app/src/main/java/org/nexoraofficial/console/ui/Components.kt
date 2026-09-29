@@ -105,7 +105,7 @@ fun Pill(text: String, state: String, modifier: Modifier = Modifier) {
         contentColor = fg
     ) {
         Text(
-            text,
+            text.proper(),
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -129,7 +129,7 @@ fun Kpi(value: String, label: String, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                label,
+                label.proper(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -151,8 +151,8 @@ fun Fact(
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(
-                label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
+                label.proper(),
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             content()
@@ -235,8 +235,8 @@ fun Mono(text: String, modifier: Modifier = Modifier, color: Color? = null, size
 @Composable
 fun GroupHeading(text: String) {
     Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelMedium,
+        text.proper(),
+        style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(bottom = 8.dp)
     )

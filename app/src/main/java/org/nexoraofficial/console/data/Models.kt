@@ -42,6 +42,10 @@ data class Company(
     val periodDays: Int,
     val txnLimit: Int,
     val txnUsed: Int,
+    /* 1.6.0 — "want to limit ai call as per company per day from console and from console android app":
+       Nexora AI questions a day set for this company (0 = the service's own number), and how many today */
+    val aiDailyLimit: Int,
+    val aiUsedToday: Int,
     val usageMinutes: Int,
     val loginId: String?,
     val selfRegistered: Boolean,
@@ -91,6 +95,8 @@ data class Company(
             periodDays = o.int("period_days"),
             txnLimit = o.int("txn_limit"),
             txnUsed = o.int("txn_used"),
+            aiDailyLimit = o.int("ai_daily_limit"),
+            aiUsedToday = o.int("ai_used_today"),
             usageMinutes = o.int("usage_minutes"),
             loginId = o.str("login_id"),
             selfRegistered = o.bool("self_registered"),

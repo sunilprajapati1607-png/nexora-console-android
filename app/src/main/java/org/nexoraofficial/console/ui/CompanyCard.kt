@@ -62,7 +62,7 @@ fun CompanyScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item { Box(page) { IdentityCard(company, vm) } }
+        item { Column(page) { IdentityCard(company, vm) } }   /* a banner and a card, one under the other */
         item { Box(page) { FactsCard(company) } }
         item { Box(page) { PeopleCard(company, vm, onAsk) } }
         item { Box(page) { ActionsCard(company, vm, nav, onAsk) } }
@@ -77,17 +77,25 @@ private fun IdentityCard(company: Company, vm: ConsoleViewModel) {
     val clipboard = LocalClipboardManager.current
     val state = company.shownState
 
-    ConsoleCard {
+    /* 1.6.0 — the company's head on the logo's sweep, as Nexora Mobile heads a record */
+    GradientBanner(Modifier.appear(0)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                company.name,
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f)
-            )
-            Pill(if (state == "DEMO") "demo" else state.lowercase(), state)
+            Text(company.name, style = MaterialTheme.typography.headlineSmall, color = androidx.compose.ui.graphics.Color.White,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.CircleShape, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.2f)) {
+                Text((if (state == "DEMO") "demo" else state.lowercase()).proper(), color = androidx.compose.ui.graphics.Color.White,
+                    style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+            }
         }
-
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(company.plan + " plan · " + (if (state == "EXPIRED" || state == "SUSPENDED") "ended " + Fmt.day(company.expiresAt)
+            else if (company.daysLeft == 0) "ends today" else "${company.daysLeft} days left"),
+            style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f))
+        Text("${company.seatsUsed} of ${company.seats} seats · ${company.machinesUsed} computers · Nexora AI ${company.aiUsedToday} today",
+            style = MaterialTheme.typography.labelMedium, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f))
+    }
+    Spacer(Modifier.height(12.dp))
+    ConsoleCard {
         WrapRow {
             if (company.selfRegistered) Pill("self-registered", "SELF")
             if (company.gstin != null) {
@@ -147,7 +155,7 @@ private fun FactsCard(company: Company) {
     val state = company.shownState
 
     ConsoleCard {
-        Text("Where they stand", style = CardTitleStyle)
+        Text("Where They Stand", style = CardTitleStyle)
         Spacer(Modifier.height(12.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -216,7 +224,11 @@ private fun FactsCard(company: Company) {
             Fact("Transactions", Modifier.weight(1f)) {
                 TransactionsFigure(company.txnUsed, company.txnLimit)
             }
-            Spacer(Modifier.weight(1f))
+            /* 1.6.0 — Nexora AI asked today, and the day's limit */
+            Fact("Nexora AI Today", Modifier.weight(1f)) {
+                FactValue(company.aiUsedToday.toString())
+                Small(if (company.aiDailyLimit > 0) "of ${company.aiDailyLimit} a day" else "the service's own limit")
+            }
         }
     }
 }
@@ -447,7 +459,7 @@ private fun ActionsCard(
     val id = company.id
 
     ConsoleCard {
-        Text("What you can do", style = CardTitleStyle)
+        Text("What You Can Do", style = CardTitleStyle)
 
         Spacer(Modifier.height(14.dp))
         GroupHeading("Their details")
@@ -642,6 +654,20 @@ private fun ActionsCard(
         Spacer(Modifier.height(16.dp))
         GroupHeading("Usage")
         WrapRow {
+            ConsoleButton("Nexora AI a day", {
+                onAsk(
+                    Ask.Input(
+                        title = "How many Nexora AI questions may this company ask a day?",
+                        body = "On Nexora's Google key. 0 = the service's own number. A company with its own " +
+                            "Gemini key is limited by Google, not by this.",
+                        label = "Questions a day",
+                        initial = company.aiDailyLimit.toString(),
+                        numeric = true,
+                        validate = { if ((it.toIntOrNull() ?: -1) >= 0) null else "Enter a number (0 or more)." },
+                        onOk = { v -> vm.setAiLimit(id, v.toInt()) }
+                    )
+                )
+            }, small = true)
             ConsoleButton("Transaction limit", {
                 onAsk(
                     Ask.Input(
