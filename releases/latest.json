@@ -1,9 +1,9 @@
 {
-    "versionCode": 15,
-    "versionName": "1.6.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.6.0-15.apk",
-    "notes": "Looks like Nexora Mobile (coloured tiles, cards, banners); Nexora AI a day per company; labels in Proper Case",
-    "sha256": "d5755ea83b9601e77b51a82dc22c1f53f0ecfadd5237352347a3a183be1948d4",
-    "sizeBytes": 16460267,
-    "publishedAt": "2026-09-29T06:43:10Z"
+    "versionCode": 16,
+    "versionName": "1.6.1",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.6.1-16.apk",
+    "notes": "Plans list Marketing (desktop 4.68.0), so saving the plan matrix keeps it on",
+    "sha256": "8360113ca710db8f0802c58f933c1c7e404ca3eaeaac8140cfcccdf79b15fc82",
+    "sizeBytes": 16460391,
+    "publishedAt": "2026-09-29T11:23:50Z"
 }
