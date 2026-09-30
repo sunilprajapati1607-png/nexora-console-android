@@ -160,19 +160,30 @@ fun IconDot(icon: ImageVector, a: Accent, size: Int = 38) {
 @Composable
 fun BigTile(icon: ImageVector, count: String, label: String, kind: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val a = accent(kind)
+    /* 1.7.1 — "at kpi card eveey card has its own different colour gradiant with dynamic in dark mode" (as the desktop
+       4.70.1 and Nexora Mobile 0.9.1): each tile keeps its kind's colour (a red Reports still means bugs) and wears it as
+       a gradient — the colour into a violet of itself along the top and on the icon, over a soft wash of it, stronger on
+       a dark theme */
+    val dark = LocalNexora.current.isDark
+    val c2 = androidx.compose.ui.graphics.lerp(a.fg, Color(0xFF7C3AED), 0.35f)
     Surface(
         modifier = modifier.clip(MaterialTheme.shapes.medium).pressable(onClick),
         shape = MaterialTheme.shapes.medium,
         color = a.bg,
-        border = BorderStroke(1.dp, a.fg.copy(alpha = 0.18f))
+        border = BorderStroke(1.dp, a.fg.copy(alpha = if (dark) 0.40f else 0.24f))
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Box(Modifier.size(36.dp).clip(CircleShape).background(a.fg), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+        Box(Modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(a.fg.copy(alpha = if (dark) 0.22f else 0.12f), c2.copy(alpha = if (dark) 0.08f else 0.03f), a.bg)))) {
+            Column(Modifier.padding(14.dp)) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(a.fg, c2))), contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(count, style = MaterialTheme.typography.headlineSmall, color = a.fg, fontWeight = FontWeight.SemiBold)
+                Text(label.proper(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(10.dp))
-            Text(count, style = MaterialTheme.typography.headlineSmall, color = a.fg, fontWeight = FontWeight.SemiBold)
-            Text(label.proper(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.matchParentSize()) {
+                Box(Modifier.fillMaxWidth().height(3.dp).background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(a.fg, c2))))
+            }
         }
     }
 }

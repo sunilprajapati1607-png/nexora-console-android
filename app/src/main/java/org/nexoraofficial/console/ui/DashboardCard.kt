@@ -52,10 +52,10 @@ fun DashboardCard(vm: ConsoleViewModel) {
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Kpi(vm.customerCount.toString(), "Customers")
-            Kpi(vm.demoCount.toString(), "Demos")
-            Kpi(vm.runningCount.toString(), "Running")
-            Kpi(vm.data.licences.size.toString(), "Installations")
+            Kpi(vm.customerCount.toString(), "Customers", slot = 0)
+            Kpi(vm.demoCount.toString(), "Demos", slot = 1)
+            Kpi(vm.runningCount.toString(), "Running", slot = 2)
+            Kpi(vm.data.licences.size.toString(), "Installations", slot = 3)
         }
 
         /* ---- what might still be ---- */
@@ -64,12 +64,12 @@ fun DashboardCard(vm: ConsoleViewModel) {
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Kpi(total.toString(), "Enquiries")
-            Kpi(vm.newInquiryCount.toString(), "New")
-            Kpi(vm.openInquiries.toString(), "Open")
-            Kpi(vm.wonInquiries.toString(), "Won")
-            Kpi(due.size.toString(), "Due today")
-            Kpi(vm.openFeedback.toString(), "Reports")
+            Kpi(total.toString(), "Enquiries", slot = 0)
+            Kpi(vm.newInquiryCount.toString(), "New", slot = 1)
+            Kpi(vm.openInquiries.toString(), "Open", slot = 2)
+            Kpi(vm.wonInquiries.toString(), "Won", slot = 3)
+            Kpi(due.size.toString(), "Due today", slot = 4)
+            Kpi(vm.openFeedback.toString(), "Reports", slot = 5)
         }
 
         if (total == 0) {

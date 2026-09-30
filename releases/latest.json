@@ -1,9 +1,9 @@
 {
-    "versionCode": 17,
-    "versionName": "1.7.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.7.0-17.apk",
-    "notes": "Four tabs in their own gradients (Dashboard, Enquiries, Feedback, Companies), More and settings in the side menu, a press felt on every button, the briefing gradient on the greeting",
-    "sha256": "b350554cc3bec838879a1335f9039b90d6c4101a220ea4239696c88d799023f3",
-    "sizeBytes": 16480243,
-    "publishedAt": "2026-09-30T03:38:15Z"
+    "versionCode": 18,
+    "versionName": "1.7.1",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.7.1-18.apk",
+    "notes": "Every figure tile in its own gradient colour, light and dark (as Nexora 4.70.1 and Nexora Mobile 0.9.1)",
+    "sha256": "5f9fd6f6f4048ab8d2e7aa22a01816ed3ed4eb44296a4fd1207fbc2dec4a4059",
+    "sizeBytes": 16832150,
+    "publishedAt": "2026-09-30T11:56:30Z"
 }

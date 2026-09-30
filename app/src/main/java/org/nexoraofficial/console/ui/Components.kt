@@ -119,26 +119,51 @@ fun Pill(text: String, state: String, modifier: Modifier = Modifier) {
 
 /** A headline figure with its name under it. */
 @Composable
-fun Kpi(value: String, label: String, modifier: Modifier = Modifier) {
+fun Kpi(value: String, label: String, modifier: Modifier = Modifier, slot: Int? = null) {
+    /* 1.7.1 — "same way ... also in console android app" (Nexora 4.70.1): each figure tile its own colour, in turn —
+       blue, amber, rose, green, violet, cyan — a gradient line along its top and a soft wash, stronger on a dark
+       theme, and the figure in a shade of it that reads on either */
+    val dark = org.nexoraofficial.console.ui.theme.LocalNexora.current.isDark
+    val pal = slot?.let { KpiPalette[it % KpiPalette.size] }
     Surface(
         modifier = modifier.defaultMinSize(minWidth = 104.dp),
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        color = if (pal == null) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface,
+        border = pal?.let { androidx.compose.foundation.BorderStroke(1.dp, it.first.copy(alpha = if (dark) 0.45f else 0.28f)) }
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
-            Text(
-                value,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                label.proper(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Box(Modifier.background(if (pal == null) androidx.compose.ui.graphics.SolidColor(androidx.compose.ui.graphics.Color.Transparent)
+            else androidx.compose.ui.graphics.Brush.linearGradient(listOf(pal.first.copy(alpha = if (dark) 0.28f else 0.15f),
+                pal.second.copy(alpha = if (dark) 0.10f else 0.05f), MaterialTheme.colorScheme.surface)))) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = if (pal == null) MaterialTheme.colorScheme.onSurface
+                        else if (dark) androidx.compose.ui.graphics.lerp(pal.first, androidx.compose.ui.graphics.Color.White, 0.25f)
+                        else androidx.compose.ui.graphics.lerp(pal.first, androidx.compose.ui.graphics.Color.Black, 0.18f)
+                )
+                Text(
+                    label.proper(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (pal != null) Box(Modifier.matchParentSize()) {
+                Box(Modifier.fillMaxWidth().height(3.dp).background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(pal.first, pal.second))))
+            }
         }
     }
 }
+
+/** 1.7.1 — the figure tiles' colours, taken in turn (the same as Nexora Mobile and the desktop). */
+private val KpiPalette = listOf(
+    androidx.compose.ui.graphics.Color(0xFF3B82F6) to androidx.compose.ui.graphics.Color(0xFF6366F1),
+    androidx.compose.ui.graphics.Color(0xFFF59E0B) to androidx.compose.ui.graphics.Color(0xFFF97316),
+    androidx.compose.ui.graphics.Color(0xFFF43F5E) to androidx.compose.ui.graphics.Color(0xFFEC4899),
+    androidx.compose.ui.graphics.Color(0xFF10B981) to androidx.compose.ui.graphics.Color(0xFF14B8A6),
+    androidx.compose.ui.graphics.Color(0xFF8B5CF6) to androidx.compose.ui.graphics.Color(0xFFA855F7),
+    androidx.compose.ui.graphics.Color(0xFF06B6D4) to androidx.compose.ui.graphics.Color(0xFF0EA5E9)
+)
 
 /** One labelled figure inside a card. */
 @Composable
