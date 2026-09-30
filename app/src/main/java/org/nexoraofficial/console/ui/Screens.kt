@@ -89,7 +89,9 @@ fun DashboardScreen(
            each kind of thing in its own colour, and every tile and card leads somewhere */
         item {
             Box(page.appear(0)) {
-                GradientBanner {
+                /* 1.7.0 — the morning briefing's gradient, by the hour, as Nexora Mobile's dashboard */
+                val hr = java.time.LocalTime.now().hour
+                GradientBanner(colors = if (hr >= 17) listOf(Color(0xFF312E81), Color(0xFF6D28D9), Color(0xFFDB2777)) else if (hr >= 12) listOf(Color(0xFF0EA5E9), Color(0xFF6366F1), Color(0xFFDB2777)) else listOf(Color(0xFFF59E0B), Color(0xFFEC4899), Color(0xFF7C3AED))) {
                     Text("Namaste", style = MaterialTheme.typography.headlineSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
                     Text("Nexora Licence Console", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
                     Spacer(Modifier.height(10.dp))
@@ -406,7 +408,7 @@ fun MenuRow(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
+            .pressable(onClick)
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

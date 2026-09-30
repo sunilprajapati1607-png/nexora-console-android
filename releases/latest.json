@@ -1,9 +1,9 @@
 {
-    "versionCode": 16,
-    "versionName": "1.6.1",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.6.1-16.apk",
-    "notes": "Plans list Marketing (desktop 4.68.0), so saving the plan matrix keeps it on",
-    "sha256": "8360113ca710db8f0802c58f933c1c7e404ca3eaeaac8140cfcccdf79b15fc82",
-    "sizeBytes": 16460391,
-    "publishedAt": "2026-09-29T11:23:50Z"
+    "versionCode": 17,
+    "versionName": "1.7.0",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.7.0-17.apk",
+    "notes": "Four tabs in their own gradients (Dashboard, Enquiries, Feedback, Companies), More and settings in the side menu, a press felt on every button, the briefing gradient on the greeting",
+    "sha256": "b350554cc3bec838879a1335f9039b90d6c4101a220ea4239696c88d799023f3",
+    "sizeBytes": 16480243,
+    "publishedAt": "2026-09-30T03:38:15Z"
 }

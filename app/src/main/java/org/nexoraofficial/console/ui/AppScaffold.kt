@@ -18,11 +18,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.TableChart
+import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.WorkspacePremium
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Menu
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -112,7 +126,15 @@ fun AppScaffold(vm: ConsoleViewModel) {
     }
 
     val screen = nav.current
-
+    /* 1.7.0 — the side menu */
+    val drawer = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+    androidx.compose.material3.ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = !nav.canGoBack || drawer.isOpen,
+        drawerContent = { ConsoleDrawer(vm, nav, exportAll) { act -> scope.launch { drawer.close() }; act() } }
+    ) {
     Scaffold(
         containerColor = c.bg,
         topBar = {
@@ -121,7 +143,7 @@ fun AppScaffold(vm: ConsoleViewModel) {
                     if (nav.canGoBack) {
                         IconTap(Icons.AutoMirrored.Outlined.ArrowBack, "Back") { nav.back() }
                     } else {
-                        Box(Modifier.padding(start = 12.dp)) { BrandMark(30) }
+                        IconTap(Icons.Outlined.Menu, "Menu") { scope.launch { drawer.open() } }
                     }
                 },
                 title = {
@@ -152,35 +174,7 @@ fun AppScaffold(vm: ConsoleViewModel) {
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = c.bgElevated, tonalElevation = 0.dp) {
-                ROOTS.forEach { dest ->
-                    val selected = nav.root == dest && !nav.canGoBack
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = { nav.switchTo(dest) },
-                        icon = {
-                            val count = badgeFor(dest, vm)
-                            if (count > 0) {
-                                BadgedBox(badge = {
-                                    Badge(containerColor = c.bad, contentColor = Color.White) {
-                                        Text(if (count > 99) "99+" else "$count", fontSize = 10.sp)
-                                    }
-                                }) { Icon(dest.icon, dest.title, Modifier.size(22.dp)) }
-                            } else {
-                                Icon(dest.icon, dest.title, Modifier.size(22.dp))
-                            }
-                        },
-                        label = { Text(dest.title, fontSize = 11.sp, maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = c.accent,
-                            selectedTextColor = c.accent,
-                            indicatorColor = c.accentBg,
-                            unselectedIconColor = c.muted,
-                            unselectedTextColor = c.muted
-                        )
-                    )
-                }
-            }
+            if (!nav.canGoBack && nav.root in ROOTS) GradientTabBar(vm, nav)
         },
         floatingActionButton = {
             /* A + only where there is something to add. */
@@ -240,6 +234,7 @@ fun AppScaffold(vm: ConsoleViewModel) {
     }
 
     AskHost(ask) { ask = null }
+    }
 }
 
 /* ---- the bits of furniture the scaffold needs ---- */
@@ -315,3 +310,104 @@ private fun badgeFor(dest: Screen.Root, vm: ConsoleViewModel): Int = when (dest)
     Screen.Feedback -> vm.newFeedbackCount
     else -> 0
 }
+
+/* 1.7.0 — each tab in its own gradient, a pill that grows in under the one you are on, and a press felt */
+private fun tabGradient(dest: Screen.Root): List<Color> = when (dest) {
+    Screen.Dashboard -> listOf(Color(0xFF2563EB), Color(0xFF7C3AED))
+    Screen.Enquiries -> listOf(Color(0xFFEC4899), Color(0xFF8B5CF6))
+    Screen.Feedback -> listOf(Color(0xFFF59E0B), Color(0xFFEF4444))
+    Screen.Companies -> listOf(Color(0xFF0D9488), Color(0xFF22C55E))
+    else -> listOf(Color(0xFF0A66E0), Color(0xFF06B6D4))
+}
+
+@Composable
+private fun GradientTabBar(vm: ConsoleViewModel, nav: Navigator) {
+    val c = LocalNexora.current
+    androidx.compose.material3.Surface(color = c.bgElevated, shadowElevation = 10.dp) {
+        Row(
+            Modifier.fillMaxWidth().windowInsetsPadding(androidx.compose.material3.NavigationBarDefaults.windowInsets)
+                .padding(horizontal = 6.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            ROOTS.forEach { dest ->
+                val sel = nav.root == dest && !nav.canGoBack
+                val g = tabGradient(dest)
+                val on by androidx.compose.animation.core.animateFloatAsState(if (sel) 1f else 0f, androidx.compose.animation.core.tween(280), label = "tab")
+                val count = badgeFor(dest, vm)
+                Column(
+                    Modifier.weight(1f).clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                        .pressable { nav.switchTo(dest) }.padding(vertical = 3.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(Modifier.size(width = 58.dp, height = 32.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(width = (34 + 24 * on).dp, height = 32.dp).graphicsLayer { alpha = on }
+                            .clip(CircleShape).background(androidx.compose.ui.graphics.Brush.horizontalGradient(g)))
+                        BadgedBox(badge = {
+                            if (count > 0) Badge(containerColor = c.bad, contentColor = Color.White) { Text(if (count > 99) "99+" else "$count", fontSize = 10.sp) }
+                        }) { Icon(dest.icon, dest.title, Modifier.size(22.dp), tint = if (sel) Color.White else g[0].copy(alpha = 0.8f)) }
+                    }
+                    Text(dest.title, fontSize = 11.sp, maxLines = 1, color = if (sel) g[0] else c.muted,
+                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+/** 1.7.0 — the side menu: the four places, then what More had — do, see, set up — and sign out. */
+@Composable
+private fun ConsoleDrawer(vm: ConsoleViewModel, nav: Navigator, onExport: () -> Unit, go: (() -> Unit) -> Unit) {
+    val c = LocalNexora.current
+    androidx.compose.material3.ModalDrawerSheet(drawerContainerColor = c.bgElevated, modifier = Modifier.padding(end = 56.dp)) {
+        Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+            Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFF59E0B), Color(0xFFEC4899), Color(0xFF7C3AED)))).padding(20.dp)) {
+                Column {
+                    Box(Modifier.size(48.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) { BrandMark(36) }
+                    Spacer(Modifier.height(10.dp))
+                    Text("Nexora Console", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("the licence service, in your pocket", color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            ROOTS.forEach { d ->
+                DrawerRow(d.icon, d.title, tabGradient(d)[0], nav.root == d && !nav.canGoBack, badgeFor(d, vm)) { go { nav.switchTo(d) } }
+            }
+            DrawerSection("Do")
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.Campaign, "Tell the customers", Color(0xFFEC4899)) { go { nav.switchTo(Screen.Dashboard); nav.open(Screen.Announce) } }
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.Forum, "Message every plant", Color(0xFF7C3AED)) { go { nav.switchTo(Screen.Dashboard); nav.open(Screen.Broadcast) } }
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.TableChart, "Export to Excel", Color(0xFF15803D)) { go { onExport() } }
+            DrawerSection("See")
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.Computer, "The machines", Color(0xFF0A66E0)) { go { nav.switchTo(Screen.Dashboard); nav.open(Screen.Machines) } }
+            DrawerSection("Set up")
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.Tune, "Service settings", Color(0xFF0D9488)) { go { nav.switchTo(Screen.Dashboard); nav.open(Screen.Settings) } }
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.WorkspacePremium, "Plans", Color(0xFFF59E0B)) { go { nav.switchTo(Screen.Dashboard); nav.open(Screen.Plans) } }
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.MoreHoriz, "More", Color(0xFF475569), nav.root == Screen.More && !nav.canGoBack) { go { nav.switchTo(Screen.More) } }
+            DrawerRow(androidx.compose.material.icons.Icons.Outlined.Info, "About this console", Color(0xFF475569)) { go { nav.switchTo(Screen.Dashboard); nav.open(Screen.About) } }
+            DrawerSection("")
+            DrawerRow(androidx.compose.material.icons.Icons.AutoMirrored.Outlined.Logout, "Sign out", c.bad) { go { vm.signOut() } }
+            Spacer(Modifier.height(16.dp))
+            Text("Console " + org.nexoraofficial.console.BuildConfig.VERSION_NAME, color = c.muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun DrawerSection(text: String) {
+    val c = LocalNexora.current
+    androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), color = c.border)
+    if (text.isNotBlank()) Text(text.uppercase(), color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 28.dp, top = 4.dp, bottom = 4.dp))
+}
+
+@Composable
+private fun DrawerRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color, selected: Boolean = false, count: Int = 0, onClick: () -> Unit) {
+    val c = LocalNexora.current
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp).clip(RoundedCornerShapeDrawer)
+        .background(if (selected) tint.copy(alpha = 0.12f) else Color.Transparent).pressable(onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, label, Modifier.size(22.dp), tint = tint)
+        Spacer(Modifier.width(14.dp))
+        Text(label, color = c.text, fontSize = 15.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
+        if (count > 0) Badge(containerColor = c.bad, contentColor = Color.White) { Text(if (count > 99) "99+" else "$count", fontSize = 10.sp) }
+    }
+}
+private val RoundedCornerShapeDrawer = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)

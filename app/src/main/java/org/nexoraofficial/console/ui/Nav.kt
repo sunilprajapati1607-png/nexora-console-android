@@ -87,7 +87,9 @@ sealed interface Screen {
    keeps its title and icon) but is reached from the Dashboard and More:
    a report from a plant is looked at every day, the list of every
    installation is not. */
-val ROOTS = listOf(Screen.Dashboard, Screen.Enquiries, Screen.Feedback, Screen.Companies, Screen.More)
+/* 1.7.0 — as Nexora Mobile 0.8.0: four tabs along the bottom, each in its own gradient; More and settings live in the
+   side menu (☰). More is still a Root, opened from there. */
+val ROOTS = listOf(Screen.Dashboard, Screen.Enquiries, Screen.Feedback, Screen.Companies)
 
 /**
  * The back stack. The bottom of it is always a root, so Back can never empty

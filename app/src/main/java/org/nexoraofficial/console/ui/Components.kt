@@ -1,5 +1,8 @@
 package org.nexoraofficial.console.ui
 
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
@@ -257,6 +260,11 @@ fun ConsoleButton(
     center: Boolean = false
 ) {
     val c = LocalNexora.current
+    /* 1.7.0 — a press is felt: the button gives under the finger */
+    val src = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val down by src.collectIsPressedAsState()
+    val sc by androidx.compose.animation.core.animateFloatAsState(if (down) 0.94f else 1f, androidx.compose.animation.core.tween(110), label = "press")
+    @Suppress("NAME_SHADOWING") val modifier = modifier.graphicsLayer { scaleX = sc; scaleY = sc }
     val pad = if (small) {
         androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
     } else {
@@ -274,17 +282,22 @@ fun ConsoleButton(
     }
 
     when (kind) {
-        ButtonKind.Primary -> Button(
-            onClick = onClick,
-            enabled = enabled,
-            shape = CircleShape,
-            contentPadding = pad,
-            modifier = modifier.defaultMinSize(minHeight = if (small) 34.dp else 44.dp)
-        ) { label() }
+        ButtonKind.Primary -> androidx.compose.foundation.layout.Box(
+            modifier.defaultMinSize(minHeight = if (small) 34.dp else 44.dp).clip(CircleShape)
+                .background(if (enabled) androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFF0A66E0), Color(0xFF6D3FF5)))
+                    else androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.surfaceVariant))
+                .clickable(interactionSource = src, indication = androidx.compose.foundation.LocalIndication.current, enabled = enabled, onClick = onClick)
+                .padding(pad),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) {
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides
+                (if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)) { label() }
+        }
 
         ButtonKind.Danger -> OutlinedButton(
             onClick = onClick,
             enabled = enabled,
+            interactionSource = src,
             shape = CircleShape,
             contentPadding = pad,
             colors = ButtonDefaults.outlinedButtonColors(contentColor = c.bad),
@@ -295,6 +308,7 @@ fun ConsoleButton(
         ButtonKind.Default -> OutlinedButton(
             onClick = onClick,
             enabled = enabled,
+            interactionSource = src,
             shape = CircleShape,
             contentPadding = pad,
             colors = ButtonDefaults.outlinedButtonColors(

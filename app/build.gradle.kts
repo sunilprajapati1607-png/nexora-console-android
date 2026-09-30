@@ -11,8 +11,8 @@ android {
         applicationId = "org.nexoraofficial.console"
         minSdk = 26
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.6.1"
+        versionCode = 17
+        versionName = "1.7.0"
 
         /* The service the console talks to. Changed here, not in code, so a
            staging build is one line. It is also overridable at run time from
