@@ -461,14 +461,35 @@ data class Inquiry(
     val companyId: Int?,
     val coName: String?,
     val createdAt: String?,
-    val updatedAt: String?
+    val updatedAt: String?,
+    /* 1.8.1 (Nexora 4.73.0, C17) — the website's enquiry form 2: where the plant manufactures, its website,
+       and its product range (the ticks, with the words written beside "Other"). Null / empty on an enquiry
+       from before it and on one typed in by hand. Plain text from a public form: shown, never opened. */
+    val location: String? = null,
+    val website: String? = null,
+    val products: List<String> = emptyList(),
+    val productOther: String? = null
 ) {
     val isOpen: Boolean get() = state != "WON" && state != "LOST"
+
+    /**
+     * The product range as the card lists it: each tick in the form's order, "Other" carrying what was
+     * written beside it ("Other: Jumbo bags"), and words for Other with no Other tick still shown.
+     */
+    val productLines: List<String>
+        get() {
+            val other = productOther?.takeIf { it.isNotBlank() }
+            val out = products.map { p -> if (p.equals("Other", ignoreCase = true) && other != null) "Other: $other" else p }
+            return if (other != null && products.none { it.equals("Other", ignoreCase = true) }) out + "Other: $other" else out
+        }
+
+    /** Whether the card has any of the form-2 facts to show. */
+    val hasPlantFacts: Boolean get() = !location.isNullOrBlank() || !website.isNullOrBlank() || productLines.isNotEmpty()
 
     fun matches(term: String): Boolean {
         if (term.isBlank()) return true
         val t = term.lowercase()
-        return listOf(name, company, phone, email, product, message, notes, coName)
+        return (listOf(name, company, phone, email, product, message, notes, coName, location, website, productOther) + products)
             .any { it?.lowercase()?.contains(t) == true }
     }
 
@@ -490,8 +511,33 @@ data class Inquiry(
             companyId = o.optInt("companyId").takeIf { it > 0 },
             coName = o.str("coName"),
             createdAt = o.str("createdAt"),
-            updatedAt = o.str("updatedAt")
+            updatedAt = o.str("updatedAt"),
+            location = o.str("location")?.oneLine(),
+            website = o.str("website")?.oneLine(),
+            products = productsOf(o.opt("products")),
+            productOther = (o.str("productOther") ?: o.str("product_other"))?.oneLine()
         )
+
+        /* One line each, whatever the service kept: a control character is a space (the service makes them so
+           too, since 4.72.0), and runs of spaces are one. */
+        private fun String.oneLine(): String? =
+            replace(Regex("[\\u0000-\\u001f\\u007f]+"), " ").trim().replace(Regex("\\s+"), " ").ifEmpty { null }
+
+        /** The ticks — a JSON array (as the service sends them), or that array written as text; anything else is none. */
+        internal fun productsOf(v: Any?): List<String> {
+            val arr: JSONArray = when (v) {
+                is JSONArray -> v
+                is String -> {
+                    val s = v.trim()
+                    if (!s.startsWith("[")) return listOfNotNull(v.oneLine())
+                    runCatching { JSONArray(s) }.getOrNull() ?: return emptyList()
+                }
+                else -> return emptyList()
+            }
+            return (0 until arr.length())
+                .mapNotNull { i -> arr.opt(i)?.takeIf { it is String }?.let { (it as String).oneLine() } }
+                .distinct()
+        }
     }
 }
 

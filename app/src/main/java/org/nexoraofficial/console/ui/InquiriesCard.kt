@@ -13,14 +13,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.nexoraofficial.console.ConsoleViewModel
@@ -151,6 +156,13 @@ private fun InquiryCard(
             }
         }
 
+        /* 1.8.1 (Nexora 4.73.0, C17) — what the website's form now asks: where they manufacture, their
+           website, and what they make */
+        if (q.hasPlantFacts) {
+            Spacer(Modifier.height(8.dp))
+            PlantFacts(q)
+        }
+
         if (!q.message.isNullOrBlank()) {
             Spacer(Modifier.height(8.dp))
             Help(q.message)
@@ -212,6 +224,51 @@ private fun InquiryCard(
                 )
             }
         }
+    }
+}
+
+/**
+ * 1.8.1 (Nexora 4.73.0, C17) — the manufacturing location, the website and the product range from the
+ * website's enquiry form, each as the visitor typed it (plain text: the website is shown, never opened).
+ */
+@Composable
+private fun PlantFacts(q: Inquiry) {
+    val c = LocalNexora.current
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (!q.location.isNullOrBlank()) FactLine("Location", q.location)
+        if (!q.website.isNullOrBlank()) FactLine("Website", q.website)
+        val made = q.productLines
+        if (made.isNotEmpty()) {
+            Small("Product range", color = c.muted)
+            WrapRow { made.forEach { ProductChip(it) } }
+        }
+    }
+}
+
+@Composable
+private fun FactLine(label: String, value: String) {
+    val c = LocalNexora.current
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Small(label, color = c.muted, modifier = Modifier.width(84.dp))
+        Small(value, color = c.text, modifier = Modifier.weight(1f))
+    }
+}
+
+/** One product of the range, as a quiet chip — its words exactly as ticked or written (Pill would re-case them). */
+@Composable
+private fun ProductChip(text: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
     }
 }
 

@@ -211,4 +211,31 @@ class ScreenshotsTest {
         signedIn(step3)
         tap("Running"); shot("16-machines-keyless")
     }
+
+    /* 1.8.1 (Nexora 4.73.0, C17) — an enquiry from the website's new form: manufacturing location, website and
+       product range (with the words written beside Other), above one from before it — made-up, like the rest */
+    private val enquiries = JSONObject("""{"inquiries": [
+      {"id": 41, "name": "Ramesh Patel", "company": "Northpoint Polymers", "phone": "+91 90000 00001", "email": "purchase@example.com",
+       "product": "Nexora Sales & Costing", "message": "We run 24 circular looms and want to forecast RM cost per order.",
+       "state": "NEW", "source": "WEBSITE", "channel": "whatsapp", "createdAt": "2026-10-02T06:10:00Z",
+       "location": "Vapi, Gujarat", "website": "www.example.in",
+       "products": ["BOPP bags", "Block bottom bags", "Pinch bottom bags", "Other"], "productOther": "Jumbo bags (FIBC)"},
+      {"id": 40, "name": "Kiran Mehta", "company": "Blue River Packaging", "phone": "+91 90000 00002", "product": "Nexora ERP",
+       "state": "CONTACTED", "source": "PHONE", "createdAt": "2026-09-30T09:00:00Z", "followUp": "2026-10-05",
+       "location": null, "website": null, "products": null, "productOther": null}
+    ]}""")
+
+    @Test
+    fun enquiryWithWebsiteFields() {
+        val vm = signedIn(sample)
+        rule.runOnIdle { vm.inquiryData = org.nexoraofficial.console.data.InquiryData.from(enquiries) }
+        tap("Enquiries"); shot("17-enquiry-website-fields")
+    }
+
+    @Test
+    fun enquiryWithWebsiteFieldsDark() {
+        val vm = signedIn(sample, dark = true)
+        rule.runOnIdle { vm.inquiryData = org.nexoraofficial.console.data.InquiryData.from(enquiries) }
+        tap("Enquiries"); shot("17-enquiry-website-fields-dark")
+    }
 }

@@ -1,9 +1,9 @@
 {
-    "versionCode": 19,
-    "versionName": "1.8.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.8.0-19.apk",
-    "notes": "Signed with Nexora’s own key (uninstall 1.7.1 once). App lock, lighter notifications, a Deleted list with Restore, renew-soon marks, safer service address.",
-    "sha256": "50bd1c4767a0358d69b6964fe0ecb014b4e669fb19335c3436cb6a458aa00a03",
-    "sizeBytes": 11792958,
-    "publishedAt": "2026-10-02T09:37:13Z"
+    "versionCode": 20,
+    "versionName": "1.8.1",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.8.1-20.apk",
+    "notes": "Website enquiries show the plant’s location, its website and the product range (BOPP bags, tape, fabric, BOPP printing, block bottom, pinch bottom, other).",
+    "sha256": "5f5c66ac63fbe1737260d0cbb17feba383d3b7ab921a09cf25835286a314da47",
+    "sizeBytes": 11795566,
+    "publishedAt": "2026-10-02T15:50:17Z"
 }
