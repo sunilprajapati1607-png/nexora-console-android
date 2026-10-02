@@ -27,6 +27,7 @@ import org.nexoraofficial.console.ConsoleViewModel
 import org.nexoraofficial.console.Msg
 import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.data.Inquiry
+import org.nexoraofficial.console.data.MailAddress
 import org.nexoraofficial.console.ui.theme.LocalNexora
 
 /**
@@ -174,13 +175,12 @@ private fun InquiryCard(
             }
             if (!q.email.isNullOrBlank()) {
                 ConsoleButton("Email", {
-                    open(
-                        context,
-                        Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${q.email}")).apply {
-                            putExtra(Intent.EXTRA_SUBJECT, "Nexora — ${q.product}")
-                        },
-                        vm
-                    )
+                    /* 4.72.0 — audit #41: the address came from a public form; a
+                       mail is started only to one plain address, never to a
+                       link with a hidden BCC or a second address in it. */
+                    val mail = MailAddress.compose(q.email, "Nexora — ${q.product}")
+                    if (mail == null) vm.say(MailAddress.REFUSED, Msg.Kind.ERR)
+                    else open(context, mail, vm)
                 }, small = true)
             }
             ConsoleButton("Edit", { onEdit(q) }, small = true)

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import org.nexoraofficial.console.ConsoleViewModel
 import org.nexoraofficial.console.Msg
 import org.nexoraofficial.console.data.Company
+import org.nexoraofficial.console.data.DeletedCompany
 import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.data.Person
 import org.nexoraofficial.console.ui.theme.LocalNexora
@@ -96,6 +97,18 @@ private fun IdentityCard(company: Company, vm: ConsoleViewModel) {
     }
     Spacer(Modifier.height(12.dp))
     ConsoleCard {
+        /* 4.72.0 — audit #90: said where the renewal is done, as well as on the dashboard */
+        if (company.endingSoon) {
+            MessageStrip(
+                Msg(
+                    "The licence ${company.endsText} (${Fmt.day(company.expiresAt)}). " +
+                        "After that it opens read-only — call them to renew.",
+                    Msg.Kind.WARN
+                ),
+                onDismiss = {}
+            )
+            Spacer(Modifier.height(12.dp))
+        }
         WrapRow {
             if (company.selfRegistered) Pill("self-registered", "SELF")
             if (company.gstin != null) {
@@ -202,8 +215,10 @@ private fun FactsCard(company: Company) {
                 if (state == "EXPIRED" || state == "SUSPENDED") {
                     FactValue(Fmt.day(company.expiresAt))
                 } else {
-                    FactValue(if (company.daysLeft == 0) "today" else company.daysLeft.toString())
-                    Small(Fmt.day(company.expiresAt))
+                    /* 4.72.0 — audit #90: the service's "ending within 30 days", marked as the web console marks it */
+                    val warn = if (company.renewSoon) LocalNexora.current.warn else null
+                    FactValue(if (company.daysLeft == 0) "today" else company.daysLeft.toString(), color = warn)
+                    Small(Fmt.day(company.expiresAt) + (if (company.renewSoon) " · renew soon" else ""), color = warn)
                 }
             }
         }
@@ -723,8 +738,9 @@ private fun ActionsCard(
                 onAsk(
                     Ask.TypeToConfirm(
                         title = "Delete ${company.name}?",
-                        body = "This removes the company, its machines, its people and everything " +
-                            "they synced. It cannot be undone from here.",
+                        /* 4.72.0 — audit #40: a service that keeps a deleted company 30 days
+                           says so in its listing; an older one still erases it at once */
+                        body = deleteQuestionBody(vm.data.keepsDeleted),
                         label = "Type the company name exactly",
                         expected = company.name,
                         onOk = { typed ->
@@ -739,5 +755,25 @@ private fun ActionsCard(
             if (company.state == "SUSPENDED") "every machine runs again"
             else "every machine stops at its next check; nothing is deleted"
         )
+        if (vm.data.keepsDeleted) {
+            Why(
+                "delete stops it now and keeps it ${DeletedCompany.KEEP_DAYS} days (Restore under " +
+                    "Companies → Deleted); then it and everything that belongs to it are erased"
+            )
+        }
     }
 }
+
+/**
+ * 4.72.0 — audit #40: what the Delete question says. On a service that keeps a
+ * deleted company (the web console's words): kept 30 days, restorable until
+ * then, erased after. On one not updated yet, which still erases at once: so.
+ */
+internal fun deleteQuestionBody(keepsDeleted: Boolean): String =
+    if (keepsDeleted)
+        "Its computers and phones stop at their next check and nobody can sign in. It is kept for " +
+            "${DeletedCompany.KEEP_DAYS} days: Restore (Companies → Deleted) puts it back exactly as it was. " +
+            "After ${DeletedCompany.KEEP_DAYS} days the company, its machines, its people, everything they " +
+            "synced, its chat and its problem reports are erased for good."
+    else "This removes the company, its machines, its people and everything they synced. " +
+        "It cannot be undone from here."

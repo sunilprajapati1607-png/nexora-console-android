@@ -2,6 +2,8 @@ package org.nexoraofficial.console.data
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -171,6 +173,18 @@ class Updates(private val context: Context) {
                 }
             }
 
+            /* 1.8.0 — from this build on the console is signed with Nexora's own
+               release key, and Android installs an update only over the same
+               key. A build signed with any other (a debug build published by
+               mistake) is refused here with the reason, instead of by the
+               installer with a bare "App not installed". */
+            if (!sameSigner(partial)) {
+                partial.delete()
+                return@withContext Result.failure(
+                    ApiError("That build is not signed with the console's release key, so the phone would refuse it. It has not been installed.")
+                )
+            }
+
             if (file.exists()) file.delete()
             if (!partial.renameTo(file)) {
                 partial.delete()
@@ -230,6 +244,38 @@ class Updates(private val context: Context) {
             } catch (_: Exception) {
             }
         }
+    }
+
+    /**
+     * Whether the downloaded APK carries this application's own signing
+     * certificate. When either side cannot be read the answer is yes: the
+     * installer still checks, and an unreadable certificate must not stop an
+     * update that Android itself would accept.
+     */
+    @Suppress("DEPRECATION")
+    private fun sameSigner(apk: File): Boolean = try {
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val mine = certificates(pm.getPackageInfo(context.packageName, flags), current = true)
+        val theirs = certificates(pm.getPackageArchiveInfo(apk.path, flags), current = false)
+        mine.isEmpty() || theirs.isEmpty() || mine.any { it in theirs }
+    } catch (_: Exception) {
+        true
+    }
+
+    /* The certificates as hex. For the download, the rotation history counts
+       too, so a future key rotation still updates in place. */
+    @Suppress("DEPRECATION")
+    private fun certificates(info: PackageInfo?, current: Boolean): Set<String> {
+        if (info == null) return emptySet()
+        val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val s = info.signingInfo ?: return emptySet()
+            val now = s.apkContentsSigners.orEmpty().toList()
+            if (current || s.hasMultipleSigners()) now
+            else now + s.signingCertificateHistory.orEmpty().toList()
+        } else info.signatures.orEmpty().toList()
+        return sigs.map { it.toCharsString() }.toSet()
     }
 
     private fun sha256Of(file: File): String {

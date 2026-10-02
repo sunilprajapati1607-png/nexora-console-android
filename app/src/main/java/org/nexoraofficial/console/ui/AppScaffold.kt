@@ -203,7 +203,7 @@ fun AppScaffold(vm: ConsoleViewModel) {
             when (screen) {
                 Screen.Dashboard -> DashboardScreen(vm, nav, gutter, page)
                 Screen.Enquiries -> EnquiriesScreen(vm, nav, gutter, page) { ask = it }
-                Screen.Companies -> CompaniesScreen(vm, nav, gutter, page)
+                Screen.Companies -> CompaniesScreen(vm, nav, gutter, page) { ask = it }
                 Screen.Machines -> MachinesScreen(vm, gutter, page) { ask = it }
                 Screen.Feedback -> FeedbackScreen(vm, nav, gutter, page)
                 Screen.More -> MoreScreen(vm, nav, gutter, page, exportAll)
@@ -233,7 +233,17 @@ fun AppScaffold(vm: ConsoleViewModel) {
         }
     }
 
-    AskHost(ask) { ask = null }
+    /* 1.8.0 — a question is a window of its own (Material's AlertDialog),
+       ABOVE the activity, so the lock page drawn over the console cannot
+       cover it or take its touches: a Suspend or a Set PIN left open when the
+       phone was put down would still be on the screen, its company in it and
+       its Yes still working, the moment the lock closed. So no question is
+       shown while locked. `ask` itself is kept, and the question comes back
+       as it was asked once the owner has unlocked — only what had been typed
+       into it is gone, which for a half-typed PIN is as it should be. The
+       same goes for any Dialog, Popup or DropdownMenu added here later: none
+       of them may be composed while vm.lock.locked. */
+    if (!vm.lock.locked) AskHost(ask) { ask = null }
     }
 }
 

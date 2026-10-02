@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.nexoraofficial.console.ConsoleViewModel
 import org.nexoraofficial.console.Msg
+import org.nexoraofficial.console.data.ServiceHost
 import org.nexoraofficial.console.ui.theme.LocalNexora
 
 /**
@@ -116,9 +117,15 @@ fun GateScreen(vm: ConsoleViewModel) {
                         imeAction = ImeAction.Done
                     )
                     Spacer(Modifier.height(6.dp))
+                    /* 4.72.0 — audit #36: the admin key goes only to Nexora's own service */
                     Help(
-                        "The same service the application talks to. Leave it alone unless " +
-                            "you are pointing this at a staging copy."
+                        if (org.nexoraofficial.console.BuildConfig.DEBUG)
+                            "The same service the application talks to. This test build also takes " +
+                                "a staging copy (https)."
+                        else
+                            "The same service the application talks to. Only Nexora's own service " +
+                                "(${ServiceHost.defaultHost}) is accepted — the " +
+                                "admin key is never sent anywhere else."
                     )
                 }
             }

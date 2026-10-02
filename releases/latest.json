@@ -1,9 +1,9 @@
 {
-    "versionCode": 18,
-    "versionName": "1.7.1",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.7.1-18.apk",
-    "notes": "Every figure tile in its own gradient colour, light and dark (as Nexora 4.70.1 and Nexora Mobile 0.9.1)",
-    "sha256": "5f9fd6f6f4048ab8d2e7aa22a01816ed3ed4eb44296a4fd1207fbc2dec4a4059",
-    "sizeBytes": 16832150,
-    "publishedAt": "2026-09-30T11:56:30Z"
+    "versionCode": 19,
+    "versionName": "1.8.0",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.8.0-19.apk",
+    "notes": "Signed with Nexora’s own key (uninstall 1.7.1 once). App lock, lighter notifications, a Deleted list with Restore, renew-soon marks, safer service address.",
+    "sha256": "50bd1c4767a0358d69b6964fe0ecb014b4e669fb19335c3436cb6a458aa00a03",
+    "sizeBytes": 11792958,
+    "publishedAt": "2026-10-02T09:37:13Z"
 }

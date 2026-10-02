@@ -17,6 +17,7 @@ import org.nexoraofficial.console.data.Broadcast
 import org.nexoraofficial.console.data.PLAN_FEATURES
 import org.nexoraofficial.console.data.Company
 import org.nexoraofficial.console.data.ConsoleData
+import org.nexoraofficial.console.data.DeletedCompany
 import org.nexoraofficial.console.data.Inquiry
 import org.nexoraofficial.console.data.InquiryData
 import org.nexoraofficial.console.data.Feedback
@@ -32,6 +33,8 @@ import org.nexoraofficial.console.data.Prefs
 import org.nexoraofficial.console.data.Reach
 import org.nexoraofficial.console.data.Download
 import org.nexoraofficial.console.data.Release
+import org.nexoraofficial.console.data.MailAddress
+import org.nexoraofficial.console.data.ServiceHost
 import org.nexoraofficial.console.data.Updates
 import org.nexoraofficial.console.data.ServiceSettings
 
@@ -39,6 +42,13 @@ import org.nexoraofficial.console.data.ServiceSettings
 data class Msg(val text: String, val kind: Kind) {
     enum class Kind { OK, WARN, ERR }
 }
+
+/**
+ * 4.72.0 — which companies the Companies screen lists: every live one, only
+ * the licences ending soon (the dashboard's card, audit #90), or the ones
+ * Delete has archived, which can be restored for 30 days (audit #40).
+ */
+enum class CompanyView { ALL, ENDING, DELETED }
 
 /** The editable copy of the service settings, while the owner is changing them. */
 data class SettingsForm(
@@ -106,6 +116,9 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = Prefs(app)
 
+    /* 1.8.0 — the phone's own lock in front of everything (AppLock, MainActivity) */
+    val lock = AppLock()
+
     /* ---- the gate ---- */
     var key by mutableStateOf(prefs.adminKey)
     var baseUrl by mutableStateOf(prefs.baseUrl)
@@ -150,8 +163,9 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     /* ---- the enquiries: leads, before they are customers ---- */
+    /* 4.72.0 — internal (not private) so the tests can draw enquiries from made-up ones, as `data` */
     var inquiryData by mutableStateOf(InquiryData())
-        private set
+        internal set
     var inquiryQuery by mutableStateOf("")
     var inquiryState by mutableStateOf<String?>(null)
     var inquiryProduct by mutableStateOf<String?>(null)
@@ -210,7 +224,26 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     private val api get() = Api(baseUrl, key.trim())
 
     /* ---- the companies and installations actually shown ---- */
-    val companies: List<Company> get() = data.companies.filter { it.matches(companyQuery) }
+    /* 4.72.0 — audit #90: the dashboard's "Licences ending soon" opens the
+       list on only those; Show all puts it back.
+       4.72.0 — audit #40: or the Deleted list. One state, so the list is
+       never "ending soon" and "deleted" at once. */
+    var companyView by mutableStateOf(CompanyView.ALL)
+
+    var companyEnding: Boolean
+        get() = companyView == CompanyView.ENDING
+        set(on) { companyView = if (on) CompanyView.ENDING else CompanyView.ALL }
+
+    val companies: List<Company>
+        get() = data.companies.filter { it.matches(companyQuery) && (!companyEnding || it.endingSoon) }
+
+    /** 4.72.0 — audit #40: what Delete has archived, newest first, after the search. */
+    val deletedCompanies: List<DeletedCompany>
+        get() = data.archived.filter { it.matches(companyQuery) }
+
+    /** 4.72.0 — paying plants whose licence ends within 15 days, soonest first. */
+    val endingSoon: List<Company>
+        get() = data.companies.filter { it.endingSoon }.sortedWith(compareBy({ it.daysLeft }, { it.name }))
 
     val installations: List<Licence>
         get() = data.licences.filter {
@@ -244,6 +277,12 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             gateError = "Enter the admin key to open the console."
             return
         }
+        /* 4.72.0 — audit #36: the key goes only to Nexora's own service (a
+           test build also to a staging copy) — said here, before it is sent. */
+        ServiceHost.problem(baseUrl)?.let {
+            if (signedIn) say(it, Msg.Kind.ERR) else gateError = it
+            return
+        }
         viewModelScope.launch {
             busy = true
             try {
@@ -260,6 +299,10 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                     prefs.rememberKey = rememberKey
                     if (rememberKey) prefs.adminKey = key.trim() else prefs.signOut()
                 }
+                /* 4.72.0 (review) — the service took this key: the background
+                   watch, stopped by a refused one, may ask again. */
+                keyRefused = false
+                if (prefs.keyRejected) prefs.keyRejected = false
                 /* A company left open keeps its people in step with the reload. */
                 openCompany?.let { loadPeople(it) }
                 /* The leads come with everything else. Quietly: a service that
@@ -270,6 +313,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 /* And whether a newer build of this application exists. */
                 checkForUpdate()
             } catch (e: Exception) {
+                if ((e as? ApiError)?.keyRefused == true) keyRefused = true
                 val text = (e as? ApiError)?.message ?: "Something went wrong."
                 if (signedIn) say(text, Msg.Kind.ERR) else gateError = text
             } finally {
@@ -279,6 +323,13 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /* 4.72.0 (review) — the service refused this key. The once-a-minute
+       read of an open company's people stops asking with it: each refusal
+       counts towards the service's lock on this address (five = fifteen
+       minutes, the web console on the same Wi-Fi shut out too). A press of
+       Refresh still asks; a good load starts it again. */
+    private var keyRefused = false
+
     fun signOut() {
         prefs.signOut()
         key = ""
@@ -286,15 +337,17 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         data = ConsoleData()
         openCompany = null
         companyFilter = null
+        companyView = CompanyView.ALL
         people = null
         msg = null
     }
 
-    fun say(text: String, kind: Msg.Kind) {
+    /* 4.72.0 — [holdMs]: a long answer that must be read (Delete's) stays longer than six seconds */
+    fun say(text: String, kind: Msg.Kind, holdMs: Long = 6_000) {
         val m = Msg(text, kind)
         msg = m
         viewModelScope.launch {
-            delay(6_000)
+            delay(holdMs)
             if (msg === m) msg = null
         }
     }
@@ -482,6 +535,12 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             okText = "Done."
         )
 
+    /* 4.72.0 — audit #40: Delete now ARCHIVES. A service that keeps a deleted
+       company answers archived:true with deletedAt, purgeAt, restoreDays and a
+       warning saying it is kept 30 days, can be restored until then and is
+       erased after; that warning is the message (in the console's own words
+       when a service sends none), held long enough to be read. An older
+       service erased the company at once, and is told exactly as before. */
     fun deleteCompany(id: Int, typedName: String) {
         companyAction(
             JSONObject().put("id", id).put("action", "delete").put("confirmName", typedName)
@@ -489,16 +548,35 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             val x = r.optJSONObject("removed")
             openCompany = null
             companyFilter = null
-            say(
-                "Deleted ${r.optString("name")} — " +
-                    "${x?.optInt("installations") ?: 0} installation(s), " +
-                    "${x?.optInt("users") ?: 0} user(s), " +
-                    "${x?.optInt("records") ?: 0} synced record(s), " +
-                    "${x?.optInt("inkModels") ?: 0} ink model(s).",
-                Msg.Kind.OK
-            )
+            val name = r.optString("name")
+            val counts = "${x?.optInt("installations") ?: 0} installation(s), " +
+                "${x?.optInt("users") ?: 0} user(s), " +
+                "${x?.optInt("records") ?: 0} synced record(s), " +
+                "${x?.optInt("inkModels") ?: 0} ink model(s)"
+            if (r.optBoolean("archived")) {
+                val days = r.optInt("restoreDays", DeletedCompany.KEEP_DAYS)
+                val until = r.optString("purgeAt").takeIf { it.isNotBlank() }?.let { " until " + Fmt.day(it) }.orEmpty()
+                val said = r.optString("warning").ifEmpty {
+                    "$name is deleted and kept for $days days: Restore (Companies → Deleted) puts it back " +
+                        "exactly as it was$until. After that it is erased for good."
+                }
+                say("$said ($counts are kept until then.)", Msg.Kind.OK, holdMs = 20_000)
+            } else {
+                say("Deleted $name — $counts.", Msg.Kind.OK)
+            }
         }
     }
+
+    /**
+     * 4.72.0 — audit #40: puts a deleted company back exactly as it was (the
+     * service's `undelete` — the one action a deleted company takes), then
+     * the list shows the live companies again, where it now is.
+     */
+    fun undeleteCompany(id: Int) =
+        companyAction(JSONObject().put("id", id).put("action", "undelete")) { r ->
+            companyView = CompanyView.ALL
+            say(r.optString("warning").ifEmpty { "${r.optString("name")} is restored." }, Msg.Kind.OK)
+        }
 
     fun createCompany() {
         val f = newCompany
@@ -534,6 +612,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     /** quiet = the once-a-minute read while a company is open: what is on
      *  screen stays until the answer is in, and a failed read leaves it. */
     fun loadPeople(companyId: Int, quiet: Boolean = false) {
+        if (quiet && keyRefused) return
         viewModelScope.launch {
             peopleBusy = true
             if (!quiet) peopleError = null
@@ -541,7 +620,9 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 people = api.people(companyId)
                 peopleError = null
                 refreshedAt = Fmt.clock()
+                keyRefused = false
             } catch (e: Exception) {
+                if ((e as? ApiError)?.keyRefused == true) keyRefused = true
                 if (quiet) return@launch
                 people = null
                 peopleError = (e as? ApiError)?.message ?: "Something went wrong."
@@ -779,6 +860,11 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         val f = newInquiry
         if (f.name.isBlank()) {
             say("A name is required.", Msg.Kind.ERR)
+            return
+        }
+        /* 4.72.0 — audit #41: one plain address or none, as the Email button needs it */
+        if (f.email.isNotBlank() && MailAddress.plain(f.email) == null) {
+            say("The e-mail must be one plain address, like name@company.com — correct it or leave it empty.", Msg.Kind.ERR)
             return
         }
         val body = JSONObject()

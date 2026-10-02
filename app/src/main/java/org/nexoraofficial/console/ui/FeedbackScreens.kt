@@ -39,6 +39,7 @@ import org.nexoraofficial.console.ConsoleViewModel
 import org.nexoraofficial.console.Msg
 import org.nexoraofficial.console.data.Feedback
 import org.nexoraofficial.console.data.Fmt
+import org.nexoraofficial.console.data.MailAddress
 import org.nexoraofficial.console.ui.theme.LocalNexora
 
 /* ======================================================================
@@ -340,12 +341,10 @@ fun FeedbackDetailScreen(
                             }
                             if (!f.email.isNullOrBlank()) {
                                 ConsoleButton("Email", {
-                                    launch(
-                                        context,
-                                        Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${f.email}"))
-                                            .putExtra(Intent.EXTRA_SUBJECT, "Re: ${f.subject ?: "your report to Nexora"}"),
-                                        vm
-                                    )
+                                    /* 4.72.0 — audit #41: one plain address, or no mail at all */
+                                    val mail = MailAddress.compose(f.email, "Re: ${f.subject ?: "your report to Nexora"}")
+                                    if (mail == null) vm.say(MailAddress.REFUSED, Msg.Kind.ERR)
+                                    else launch(context, mail, vm)
                                 }, small = true)
                             }
                         }

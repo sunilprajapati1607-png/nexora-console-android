@@ -50,7 +50,7 @@ And four things the web console does not have:
 | **Enquiries** | every lead in one table. The website's contact and demo forms post straight in; the ones that arrive by phone are typed in with New enquiry. Search, filter by state, one-tap state changes, and Call / WhatsApp / Email straight from the row |
 | **Export Excel** | a real `.xlsx` — Companies and Installations, one sheet each — written without any spreadsheet library, saved wherever the phone's own save-as puts it |
 | **Tell the customers** | one message to every company that should hear it (a new version, a new product). The app sends nothing itself: it fills your own mail app with every address in BCC and you press Send |
-| **Notifications** | every fifteen minutes the phone asks whether a new enquiry has arrived or a plant has registered, and says so in the status bar under Nexora's own mark |
+| **Notifications** | every fifteen minutes from 08:30 to 20:30 India time the phone asks the service's summary (`GET /admin/api/summary`, 1.8.0) whether a new enquiry, report or registration has arrived, and says so in the status bar under Nexora's own mark. A service without the summary (not updated yet) is told once and watched the 1.7.1 way meanwhile (the enquiry, report and company lists, compared with the highest ids already told, still only 08:30 to 20:30) until the summary takes over by itself; a refused admin key is told once and then not tried again until the next sign-in |
 
 ### What the service needs
 
@@ -86,10 +86,24 @@ Android Studio works too: **Open** `D:\nexora-console-android` and let it sync �
 it will write the `gradlew` wrapper files that are not in this folder, and point
 itself at the SDK named in `local.properties`.
 
-For a release APK, add a signing config in `app/build.gradle.kts` and run
-`gradle assembleRelease` (or **Build → Generate Signed Bundle / APK**). The debug
-APK is signed with the throwaway debug key, which is fine for installing on your
-own phones but cannot be published.
+**1.8.0 on, only the release build is published.** `gradle assembleRelease` signs
+it with Nexora's own key — alias `nexora-console` in
+`D:\nexora-signing\nexora-release.jks` (the same keystore as Nexora Mobile's),
+read through `D:\nexora-signing\keystore-console.properties`. That folder is
+outside the repository and never committed. `tools\add-console-signing-key.bat`
+adds the alias and writes the properties file, once. Without the file the
+release build falls back to the debug key — fine for trying on a phone, never
+for publishing; `release.ps1` refuses to build without it and checks the
+certificate inside the APK (`CN=Nexora Console`) before staging it.
+
+Offline (`--offline`), add `-x lintVitalRelease -x lintVitalAnalyzeRelease
+-x lintVitalReportRelease`: the lint checker for release builds is not in the
+local Gradle cache.
+
+Phones on 1.7.1 or older carry the debug-signed console, and Android will not
+put a differently signed build over it: on those phones uninstall the console
+once, install 1.8.0, and enter the admin key again. From 1.8.0 on, updates
+install from inside the console as before.
 
 Versions pinned: AGP 8.5.2, Kotlin 1.9.24, Compose BOM 2024.06.00,
 compileSdk 34, minSdk 26 (Android 8.0).

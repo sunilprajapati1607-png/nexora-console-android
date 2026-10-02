@@ -43,6 +43,12 @@ fun InstallationsCard(vm: ConsoleViewModel, onAsk: (Ask) -> Unit) {
             )
         }
 
+        /* 4.72.0 — audit #97: how many in use hold no device key yet (a service that counts them) */
+        vm.data.keyless?.let { k ->
+            Spacer(Modifier.height(6.dp))
+            Small(k.note, color = if (k.devices > 0) c.warn else null)
+        }
+
         Spacer(Modifier.height(10.dp))
         ConsoleField(
             label = null,

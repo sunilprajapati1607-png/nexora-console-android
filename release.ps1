@@ -3,7 +3,8 @@
 # Double-click release.bat and answer two questions. This then:
 #
 #   1. bumps the version in app/build.gradle.kts
-#   2. builds the APK
+#   2. builds the RELEASE APK, signed with Nexora's own key (1.8.0 on;
+#      every build before was the debug build)
 #   3. copies it to releases/nexora-console-<name>-<code>.apk
 #   4. writes releases/latest.json — the file the service reads
 #   5. commits, and pushes if you say so
@@ -29,6 +30,20 @@ $BuildFile = Join-Path $Root 'app\build.gradle.kts'
 if (-not (Test-Path $BuildFile)) { Say "Cannot find $BuildFile" 'Red'; Read-Host 'Enter to close'; exit 1 }
 $Build = Get-Content $BuildFile -Raw
 
+# 1.8.0 — the console is signed with Nexora's release key from now on, and a
+# phone installs an update only over the same key. Without the key's file the
+# build would quietly fall back to this computer's debug key, and every phone
+# would refuse that update — so nothing is built or published without it.
+$Signing = 'D:\nexora-signing\keystore-console.properties'
+if (-not (Test-Path $Signing)) {
+    Say "  STOPPED: $Signing is missing." 'Red'
+    Say '  The console is signed with Nexora''s release key (alias nexora-console in' 'Red'
+    Say '  D:\nexora-signing\nexora-release.jks). Copy the D:\nexora-signing folder back' 'Red'
+    Say '  from its backup, then run this again. Nothing has been changed.' 'Red'
+    Read-Host '  Enter to close'
+    exit 1
+}
+
 $CurrentCode = [int]([regex]::Match($Build, 'versionCode\s*=\s*(\d+)').Groups[1].Value)
 $CurrentName = [regex]::Match($Build, 'versionName\s*=\s*"([^"]+)"').Groups[1].Value
 Say "  Installed builds are on $CurrentName (code $CurrentCode)."
@@ -53,7 +68,7 @@ $Build = [regex]::Replace($Build, 'versionName\s*=\s*"[^"]+"',    "versionName =
 # ---- build ----------------------------------------------------------
 Push-Location $Root
 try {
-    & $Gradle --no-daemon --console=plain assembleDebug | Tee-Object -Variable GradleOut | Select-String -Pattern '^e: |BUILD' | ForEach-Object { Say "  $_" }
+    & $Gradle --no-daemon --console=plain assembleRelease | Tee-Object -Variable GradleOut | Select-String -Pattern '^e: |BUILD' | ForEach-Object { Say "  $_" }
     if ($LASTEXITCODE -ne 0) { throw 'the build failed — nothing has been published' }
 } catch {
     Say ''
@@ -65,8 +80,20 @@ try {
 }
 Pop-Location
 
-$Apk = Join-Path $Root 'app\build\outputs\apk\debug\app-debug.apk'
+$Apk = Join-Path $Root 'app\build\outputs\apk\release\app-release.apk'
 if (-not (Test-Path $Apk)) { Say '  No APK was produced.' 'Red'; Read-Host '  Enter to close'; exit 1 }
+
+# And the proof it is the right key: the certificate inside the APK must be
+# the console's own (CN=Nexora Console), never "CN=Android Debug".
+$ApkSigner = 'D:\android-tools\sdk\build-tools\34.0.0\apksigner.bat'
+# stdout only: under 'Stop', PowerShell 5.1 would turn any warning apksigner
+# writes to stderr into a terminating error if it were redirected here.
+$Certs = (& $ApkSigner verify --print-certs $Apk | Out-String)
+if ($LASTEXITCODE -ne 0 -or $Certs -notmatch 'CN=Nexora Console') {
+    Say '  STOPPED: the APK is not signed with the console''s release key. Nothing has been published.' 'Red'
+    Read-Host '  Enter to close'
+    exit 1
+}
 
 # ---- stage it where the phones will fetch it ------------------------
 $ReleaseDir = Join-Path $Root 'releases'

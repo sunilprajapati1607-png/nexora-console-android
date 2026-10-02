@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.github.takahirom.roborazzi.captureRoboImage
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Rule
 import org.junit.Test
@@ -14,6 +15,7 @@ import org.junit.runner.RunWith
 import org.nexoraofficial.console.data.ConsoleData
 import org.nexoraofficial.console.ui.AppScaffold
 import org.nexoraofficial.console.ui.GateScreen
+import org.nexoraofficial.console.ui.LockScreen
 import org.nexoraofficial.console.ui.theme.NexoraTheme
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -80,6 +82,29 @@ class ScreenshotsTest {
         rule.waitForIdle()
     }
 
+    /* 1.8.0 — the app lock, both faces: the usual one, and a phone with no screen lock */
+    @Test
+    fun theLock() {
+        rule.setContent {
+            NexoraTheme(dark = false) {
+                LockScreen(screenLockSet = true, asking = false, problem = null, onUnlock = {}, onSetScreenLock = {})
+            }
+        }
+        rule.waitForIdle()
+        shot("00-lock")
+    }
+
+    @Test
+    fun theLockWithoutAScreenLock() {
+        rule.setContent {
+            NexoraTheme(dark = true) {
+                LockScreen(screenLockSet = false, asking = false, problem = null, onUnlock = {}, onSetScreenLock = {})
+            }
+        }
+        rule.waitForIdle()
+        shot("00-lock-no-screen-lock-dark")
+    }
+
     @Test
     fun theGate() {
         val vm = vm()
@@ -112,5 +137,78 @@ class ScreenshotsTest {
         rule.setContent { NexoraTheme(dark = vm.dark) { AppScaffold(vm) } }
         rule.waitForIdle()
         shot("02-dashboard-dark")
+    }
+
+    /* 4.72.0 — audit #90: a paying licence ending within 15 days, on the dashboard, the list and the company */
+    @Test
+    fun aLicenceEndingSoon() {
+        val vm = vm()
+        vm.signedIn = true
+        val soon = JSONObject(sample.toString())
+        soon.getJSONArray("companies").getJSONObject(0).put("days_left", 9).put("expires_at", "2026-10-11T18:29:59Z")
+        vm.data = ConsoleData.from(soon)
+        rule.setContent { NexoraTheme(dark = vm.dark) { AppScaffold(vm) } }
+        rule.waitForIdle()
+        shot("08-ending-soon-dashboard")
+        tap("Licence Ending Soon"); shot("09-ending-soon-companies")
+        tap("Shree Demo Sacks"); shot("10-ending-soon-company")
+    }
+
+    /* 4.72.0 — the service of server step 3: two companies Delete has archived (kept 30 days), and the
+       device-key count — made-up, like the rest */
+    private val step3 = JSONObject(sample.toString()).apply {
+        put("archived", JSONArray()
+            .put(JSONObject("""{"id": 11, "name": "Ganesh Tarpaulins", "email": "accounts@ganesh.example", "gstin": "24AAACG5678C1Z2",
+                "is_demo": false, "plan": "PRO", "seats": 3, "deleted_at": "2026-10-02T05:40:00Z", "deleted_state": "LICENSED",
+                "purge_at": "2026-11-01T05:40:00Z", "days_to_purge": 30, "machines": 2, "people": 3, "records": 418}"""))
+            .put(JSONObject("""{"id": 12, "name": "Laxmi Raffia", "is_demo": true, "plan": "PRO", "seats": 1,
+                "deleted_at": "2026-09-08T10:15:00Z", "deleted_state": "DEMO", "purge_at": "2026-10-08T10:15:00Z",
+                "days_to_purge": 6, "machines": 1, "people": 1, "records": 12}""")))
+        put("keyless", JSONObject().put("devices", 2).put("required", false))
+    }
+
+    private fun signedIn(data: JSONObject, dark: Boolean = false): ConsoleViewModel {
+        val vm = vm(dark)
+        vm.signedIn = true
+        vm.data = ConsoleData.from(data)
+        rule.runOnIdle { vm.lock.unlocked() }
+        rule.setContent { NexoraTheme(dark = vm.dark) { AppScaffold(vm) } }
+        rule.waitForIdle()
+        return vm
+    }
+
+    /* 4.72.0 — audit #40: the companies with the Deleted filter, and the Deleted list with Restore */
+    @Test
+    fun deletedCompanies() {
+        signedIn(step3)
+        tap("Companies"); shot("11-companies-with-deleted")
+        tap("Deleted 2"); shot("12-companies-deleted")
+    }
+
+    @Test
+    fun deletedCompaniesDark() {
+        signedIn(step3, dark = true)
+        tap("Companies"); tap("Deleted 2"); shot("12-companies-deleted-dark")
+    }
+
+    /* (No picture of the Delete question: its type-the-name field takes focus when the dialog opens under
+       Robolectric, and the blinking cursor never lets Compose go idle. Its words: Deleted4720Test.) */
+
+    /* 4.72.0 — audit #90 (service part): "renew soon" on a licence the service counts as ending within 30 days */
+    @Test
+    fun renewSoon() {
+        val soon = JSONObject(step3.toString())
+        soon.getJSONArray("companies").getJSONObject(0)
+            .put("days_left", 24).put("expires_at", "2026-10-26T18:29:59Z").put("ending_soon", true)
+        signedIn(soon)
+        tap("Companies"); shot("14-renew-soon-companies")
+        tap("Shree Demo Sacks"); shot("15-renew-soon-company")
+    }
+
+    /* 4.72.0 — audit #97: the device-key count on the machines */
+    @Test
+    fun machinesKeyless() {
+        signedIn(step3)
+        tap("Running"); shot("16-machines-keyless")
     }
 }

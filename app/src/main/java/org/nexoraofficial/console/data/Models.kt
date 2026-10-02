@@ -63,11 +63,35 @@ data class Company(
        company: its people, not only its one registered inbox. */
     val userEmails: String?,
     /* 1.5.0 — STANDARD or PRO; a demo reads as everything whatever this says */
-    val plan: String = "PRO"
+    val plan: String = "PRO",
+    /* 4.72.0 — audit #90 (service part): the service's own `ending_soon`, a
+       paying licence that ends within 30 days (IST calendar days) and has not
+       ended yet. Marked "renew soon" in the list and on the company, as the
+       web console marks it; false from a service that does not send it. The
+       dashboard's warning stays at ENDING_DAYS (endingSoon, below). */
+    val renewSoon: Boolean = false
 ) {
     /** The same reading the console shows on the pill. */
     val shownState: String
         get() = if (expired && state != "SUSPENDED") "EXPIRED" else state
+
+    /**
+     * 4.72.0 — audit #90: a paying plant whose licence ends within
+     * [ENDING_DAYS] days. Until now it worked normally to the last evening
+     * and opened read-only the next morning, and renewing hung on the owner
+     * remembering. Demos are left out (every demo ends within days, by
+     * design), and so is a licence with no end date — its days_left reads 0.
+     */
+    val endingSoon: Boolean
+        get() = state == "LICENSED" && !isDemo && !expired && expiresAt != null && daysLeft <= ENDING_DAYS
+
+    /** "ends today", "ends tomorrow", "ends in 9 days". */
+    val endsText: String
+        get() = when (daysLeft) {
+            0 -> "ends today"
+            1 -> "ends tomorrow"
+            else -> "ends in $daysLeft days"
+        }
 
     fun matches(term: String): Boolean {
         if (term.isBlank()) return true
@@ -77,6 +101,9 @@ data class Company(
     }
 
     companion object {
+        /** 4.72.0 — how far ahead the dashboard warns of a licence ending. */
+        const val ENDING_DAYS = 15
+
         fun from(o: JSONObject) = Company(
             id = o.int("id"),
             name = o.str("name") ?: "-",
@@ -111,8 +138,98 @@ data class Company(
             usersTotal = o.int("users_total"),
             adminNames = o.str("admin_names"),
             userEmails = o.str("user_emails"),
-            plan = o.str("plan") ?: "PRO"
+            plan = o.str("plan") ?: "PRO",
+            renewSoon = o.bool("ending_soon")
         )
+    }
+}
+
+/**
+ * 4.72.0 — audit #40: A COMPANY THAT DELETE HAS ARCHIVED.
+ *
+ * Delete no longer erases a company at once. The service keeps it
+ * [KEEP_DAYS] days with everything it had — its computers and phones stopped,
+ * nobody able to sign in — lists it apart from the live companies (`archived`
+ * in GET /admin/api/licences), and erases it for good after that. Until then
+ * Restore (the company action `undelete`) puts it back exactly as it was.
+ * Nothing else can be done to it: the service refuses every other action.
+ */
+data class DeletedCompany(
+    val id: Int,
+    val name: String,
+    val email: String?,
+    val phone: String?,
+    val gstin: String?,
+    val loginId: String?,
+    val isDemo: Boolean,
+    val deletedAt: String?,
+    /** What it was when it was deleted (licensed, demo, suspended) — what Restore puts back. */
+    val deletedState: String?,
+    /** When it is erased for good. */
+    val purgeAt: String?,
+    /** Whole days left to restore it, as the service counts them. */
+    val daysToPurge: Int,
+    val machines: Int,
+    val people: Int,
+    val records: Int
+) {
+    fun matches(term: String): Boolean {
+        if (term.isBlank()) return true
+        val t = term.lowercase()
+        return listOf(name, email, gstin, loginId, phone).any { it?.lowercase()?.contains(t) == true }
+    }
+
+    companion object {
+        /** The service's DELETED_KEEP_DAYS (server/src/licence.js). */
+        const val KEEP_DAYS = 30
+
+        fun from(o: JSONObject) = DeletedCompany(
+            id = o.int("id"),
+            name = o.str("name") ?: "-",
+            email = o.str("email"),
+            phone = o.str("phone"),
+            gstin = o.str("gstin"),
+            loginId = o.str("login_id"),
+            isDemo = o.bool("is_demo"),
+            deletedAt = o.str("deleted_at"),
+            deletedState = o.str("deleted_state"),
+            purgeAt = o.str("purge_at"),
+            daysToPurge = o.int("days_to_purge").coerceAtLeast(0),
+            machines = o.int("machines"),
+            people = o.int("people"),
+            records = o.int("records")
+        )
+    }
+}
+
+/**
+ * 4.72.0 — audit #97: the computers and phones in use whose row holds no
+ * device key yet. While there are any, a device id alone still re-joins as
+ * that device; once [devices] is 0, NEXORA_DEVICE_KEY_REQUIRED=1 on Render
+ * closes that for good. [required] — whether it is set already.
+ */
+data class Keyless(val devices: Int, val required: Boolean) {
+
+    /** The one line the Machines screen shows. */
+    val note: String
+        get() {
+            val who = if (devices == 1) "1 computer or phone in use holds" else "$devices computers and phones in use hold"
+            return when {
+                devices > 0 && !required ->
+                    "Device keys: $who none yet — each hands its key over at its next check on Nexora 4.71.0 / Mobile 1.0.0 or later."
+                devices > 0 ->
+                    "Device keys: $who none yet, and NEXORA_DEVICE_KEY_REQUIRED is set — one that has also lost its token must join again."
+                !required ->
+                    "Device keys: every computer and phone in use holds its own — set NEXORA_DEVICE_KEY_REQUIRED=1 on Render to stop a device id alone re-joining."
+                else ->
+                    "Device keys: every computer and phone in use holds its own, and NEXORA_DEVICE_KEY_REQUIRED is set."
+            }
+        }
+
+    companion object {
+        /** null from a service that does not count them. */
+        fun from(o: JSONObject?): Keyless? =
+            if (o == null) null else Keyless(o.optInt("devices", 0).coerceAtLeast(0), o.optBoolean("required", false))
     }
 }
 
@@ -508,11 +625,74 @@ val DEFAULT_STATES = listOf("NEW", "CONTACTED", "DEMO", "QUOTED", "WON", "LOST")
 val DEFAULT_SOURCES =
     listOf("WEBSITE", "MANUAL", "PHONE", "WHATSAPP", "REFERRAL", "VISIT", "EXHIBITION")
 
+/**
+ * 4.72.0 — audit #43: what GET /admin/api/summary answers — a handful of
+ * counts, cheap for the service, in place of the full listings the
+ * quarter-hourly watch used to pull. [at] is the service's own clock; the
+ * next look sends it back as ?since= so nothing falls between two looks
+ * whatever the phone's clock says.
+ */
+data class Summary(
+    val at: String,
+    val since: String?,
+    val companies: Int,
+    val licences: Int,
+    val newEnquiries: Int,
+    val newFeedback: Int,
+    val newRegistrations: Int
+) {
+    companion object {
+        /** ApiError.code when an answer came back but not in the agreed form. */
+        const val NOT_A_SUMMARY = "NOT_A_SUMMARY"
+
+        /* The three counts the watch acts on (contract C11), by these exact names. */
+        private val COUNTS = listOf("newEnquiries", "newFeedback", "newRegistrations")
+
+        /**
+         * null when the answer is not a summary (an older service, or an error).
+         *
+         * 4.72.0 (review) — strict about what the watch relies on: [at] must be
+         * an ISO-8601 moment with its zone (it goes back as ?since=; a number,
+         * or a date without a zone, could make the service count a whole day
+         * again on every look), and each count must be there by its contract
+         * name — a count named otherwise would read as "nothing new" for ever.
+         */
+        fun from(o: JSONObject): Summary? {
+            if (o.str("error") != null) return null
+            val at = o.str("at") ?: return null
+            if (!isoMoment(at)) return null
+            if (COUNTS.any { k -> !o.has(k) || o.isNull(k) || o.optInt(k, Int.MIN_VALUE) == Int.MIN_VALUE }) return null
+            return Summary(
+                at = at,
+                since = o.str("since"),
+                companies = o.int("companies"),
+                licences = o.int("licences"),
+                newEnquiries = o.int("newEnquiries").coerceAtLeast(0),
+                newFeedback = o.int("newFeedback").coerceAtLeast(0),
+                newRegistrations = o.int("newRegistrations").coerceAtLeast(0)
+            )
+        }
+
+        /* "2026-10-02T03:15:00.000Z" or "…+05:30": a moment with its zone. */
+        private fun isoMoment(s: String): Boolean =
+            runCatching { Instant.parse(s) }.isSuccess ||
+                runCatching { java.time.OffsetDateTime.parse(s) }.isSuccess
+    }
+}
+
 /** Everything one screen needs, as /admin/api/licences returns it. */
 data class ConsoleData(
     val licences: List<Licence> = emptyList(),
     val companies: List<Company> = emptyList(),
-    val settings: ServiceSettings = ServiceSettings()
+    val settings: ServiceSettings = ServiceSettings(),
+    /* 4.72.0 — audit #40: what Delete has archived, newest first (restorable for 30 days) */
+    val archived: List<DeletedCompany> = emptyList(),
+    /** True when the service keeps a deleted company for 30 days (its listing
+     *  carries `archived`, even empty). An older service erases one at once,
+     *  and the console must not promise a Restore that cannot be given. */
+    val keepsDeleted: Boolean = false,
+    /* 4.72.0 — audit #97: null from a service that does not count them */
+    val keyless: Keyless? = null
 ) {
     companion object {
         fun from(o: JSONObject): ConsoleData {
@@ -523,7 +703,10 @@ data class ConsoleData(
             return ConsoleData(
                 licences = arr("licences") { Licence.from(it) },
                 companies = arr("companies") { Company.from(it) },
-                settings = ServiceSettings.from(o.optJSONObject("settings"))
+                settings = ServiceSettings.from(o.optJSONObject("settings")),
+                archived = arr("archived") { DeletedCompany.from(it) },
+                keepsDeleted = o.optJSONArray("archived") != null,
+                keyless = Keyless.from(o.optJSONObject("keyless"))
             )
         }
     }
