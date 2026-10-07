@@ -72,9 +72,12 @@ object Kinds {
     private val red = Accent(Color(0xFFDC2626), Color(0xFFFDEAEA)) to Accent(Color(0xFFF87171), Color(0xFF2C1616))
     private val amber = Accent(Color(0xFFB45309), Color(0xFFFEF3C7)) to Accent(Color(0xFFFBBF24), Color(0xFF33290F))
     private val grey = Accent(Color(0xFF475467), Color(0xFFEEF1F6)) to Accent(Color(0xFFA8B2CA), Color(0xFF232A3B))
+    /* 1.9.0 — Fabric Stock's own colour, an emerald apart from the demos' teal; Weight Calc keeps Nexora's blue */
+    private val emerald = Accent(Color(0xFF047857), Color(0xFFD1FAE5)) to Accent(Color(0xFF34D399), Color(0xFF0B2E24))
 
     fun of(kind: String, dark: Boolean): Accent = (when (kind) {
-        "customer", "licensed", "blue" -> blue
+        "customer", "licensed", "blue", "weight" -> blue
+        "fabric", "emerald" -> emerald
         "demo", "teal" -> teal
         "machine", "orange" -> orange
         "enquiry", "violet", "ai" -> violet
@@ -95,6 +98,9 @@ object Kinds {
 }
 
 val BrandGradient = listOf(Color(0xFF002D86), Color(0xFF0A66E0), Color(0xFF1EA0FF))
+
+/** 1.9.0 — Fabric Stock's banner: the same sweep, in its emerald. */
+val FabricGradient = listOf(Color(0xFF064E3B), Color(0xFF047857), Color(0xFF10B981))
 
 @Composable
 fun accent(kind: String): Accent = Kinds.of(kind, LocalNexora.current.isDark)

@@ -54,8 +54,12 @@ import androidx.compose.ui.unit.sp
 import org.nexoraofficial.console.CompanyView
 import org.nexoraofficial.console.ConsoleViewModel
 import org.nexoraofficial.console.InquiryForm
+import org.nexoraofficial.console.Load
 import org.nexoraofficial.console.data.Company
+import org.nexoraofficial.console.data.CompanyEntry
 import org.nexoraofficial.console.data.DeletedCompany
+import org.nexoraofficial.console.data.FabricCompany
+import org.nexoraofficial.console.data.SoftwareFilter
 import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.ui.theme.LocalNexora
 
@@ -106,8 +110,8 @@ fun DashboardScreen(
         item {
             Column(page.appear(1), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 TileRow {
-                    BigTile(Icons.Outlined.Business, vm.customerCount.toString(), "Customers", "customer", { vm.companyEnding = false; nav.switchTo(Screen.Companies) }, Modifier.weight(1f))
-                    BigTile(Icons.Outlined.HourglassTop, vm.demoCount.toString(), "Demos", "demo", { vm.companyEnding = false; nav.switchTo(Screen.Companies) }, Modifier.weight(1f))
+                    BigTile(Icons.Outlined.Business, vm.customerCount.toString(), "Customers", "customer", { vm.companyEnding = false; vm.software = SoftwareFilter.ALL; nav.switchTo(Screen.Companies) }, Modifier.weight(1f))
+                    BigTile(Icons.Outlined.HourglassTop, vm.demoCount.toString(), "Demos", "demo", { vm.companyEnding = false; vm.software = SoftwareFilter.ALL; nav.switchTo(Screen.Companies) }, Modifier.weight(1f))
                     BigTile(Icons.Outlined.Computer, vm.runningCount.toString(), "Running", "machine", { nav.open(Screen.Machines) }, Modifier.weight(1f))
                 }
                 TileRow {
@@ -117,6 +121,8 @@ fun DashboardScreen(
                 }
             }
         }
+        /* 1.9.0 — every Nexora software in the one console: a tile each, each its own licences */
+        item { SoftwareTiles(vm, nav, page.appear(2)) }
         item {
             Column(page, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 /* 4.72.0 — audit #90: a paying plant's licence ending within 15 days, first of all,
@@ -143,7 +149,7 @@ fun DashboardScreen(
                     else "${vm.openFeedback} open" + (if (vm.openBugs > 0) " · ${vm.openBugs} problem" + (if (vm.openBugs == 1) "" else "s") else ""),
                     if (vm.openBugs > 0) "bad" else "amber", 3) { nav.switchTo(Screen.Feedback) }
                 ActionCard(Icons.Outlined.Business, "The customers", "${vm.customerCount} paying · ${vm.demoCount} on demo", "customer", 4) {
-                    vm.companyEnding = false; nav.switchTo(Screen.Companies)
+                    vm.companyEnding = false; vm.software = SoftwareFilter.ALL; nav.switchTo(Screen.Companies)
                 }
                 ActionCard(Icons.Outlined.Computer, "The machines", "${vm.runningCount} running · ${vm.data.licences.size} installed", "machine", 5) {
                     nav.open(Screen.Machines)
@@ -213,26 +219,49 @@ fun CompaniesScreen(
         }
 
         /* 4.72.0 — audit #40: the live companies, or the ones Delete has archived,
-           as filters that say how many — only from a service that keeps them */
-        if (vm.data.keepsDeleted) {
+           as filters that say how many — only from a service that keeps them.
+           1.9.0 — and which software: All (every customer once), Weight Calc,
+           Fabric Stock — once the other software has been asked for. */
+        val showSoftware = vm.productsLoad != Load.IDLE
+        if (vm.data.keepsDeleted || showSoftware) {
             item {
                 Box(page) {
+                    val n = vm.softwareCounts
+                    val live = vm.companyView == CompanyView.ALL
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        /* the chosen one (a gradient pill) sits on the same line as the outlined ones */
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         ConsoleButton(
-                            "All ${vm.data.companies.size}",
-                            { vm.companyView = CompanyView.ALL },
-                            kind = if (vm.companyView == CompanyView.ALL) ButtonKind.Primary else ButtonKind.Default,
+                            "All ${n.all}",
+                            { vm.companyView = CompanyView.ALL; vm.software = SoftwareFilter.ALL },
+                            kind = if (live && vm.software == SoftwareFilter.ALL) ButtonKind.Primary else ButtonKind.Default,
                             small = true
                         )
-                        ConsoleButton(
-                            "Deleted ${vm.data.archived.size}",
-                            { vm.companyView = CompanyView.DELETED },
-                            kind = if (showDeleted) ButtonKind.Primary else ButtonKind.Default,
-                            small = true
-                        )
+                        if (showSoftware) {
+                            ConsoleButton(
+                                "Weight Calc ${n.weight}",
+                                { vm.companyView = CompanyView.ALL; vm.software = SoftwareFilter.WEIGHT },
+                                kind = if (live && vm.software == SoftwareFilter.WEIGHT) ButtonKind.Primary else ButtonKind.Default,
+                                small = true
+                            )
+                            ConsoleButton(
+                                "Fabric Stock" + if (vm.fabricReady) " ${n.fabric}" else "",
+                                { vm.companyView = CompanyView.ALL; vm.software = SoftwareFilter.FABRIC },
+                                kind = if (live && vm.software == SoftwareFilter.FABRIC) ButtonKind.Primary else ButtonKind.Default,
+                                small = true
+                            )
+                        }
+                        if (vm.data.keepsDeleted) {
+                            ConsoleButton(
+                                "Deleted ${vm.data.archived.size}",
+                                { vm.companyView = CompanyView.DELETED },
+                                kind = if (showDeleted) ButtonKind.Primary else ButtonKind.Default,
+                                small = true
+                            )
+                        }
                     }
                 }
             }
@@ -295,24 +324,52 @@ fun CompaniesScreen(
             }
         }
 
-        if (vm.companies.isEmpty()) {
+        /* 1.9.0 — Fabric Stock not reachable (asleep, or refusing the key): said once, at the top, with
+           Retry — and the Weight Calc companies listed below as ever. Only where Fabric Stock is shown. */
+        val fabricShown = !vm.companyEnding && vm.software != SoftwareFilter.WEIGHT
+        val problem = vm.fabricProblem
+        if (fabricShown && problem != null) {
+            item(key = "fabric-not-connected") { Box(page) { FabricNotConnectedCard(vm, problem) } }
+        } else if (fabricShown && vm.productsLoad == Load.LOADING && vm.products == null) {
+            item(key = "fabric-reading") { Box(page) { FabricReadingCard() } }
+        }
+
+        val entries = vm.companyEntries
+        if (entries.isEmpty()) {
             item {
                 Box(page) {
                     ConsoleCard {
                         Help(
-                            if (vm.data.companies.isEmpty())
-                                "No companies yet. A plant that registers itself from the " +
-                                    "application appears here as a demo; a customer you set up " +
-                                    "yourself is created with the + below."
-                            else "Nothing matches that."
+                            when {
+                                vm.data.companies.isEmpty() && vm.fabricCompanies.isEmpty() ->
+                                    "No companies yet. A plant that registers itself from the " +
+                                        "application appears here as a demo; a customer you set up " +
+                                        "yourself is created with the + below."
+                                vm.software == SoftwareFilter.FABRIC && vm.companyQuery.isBlank() && problem == null ->
+                                    "No company is on Fabric Stock yet. Open a company and start it from its Fabric Stock " +
+                                        "tab, or make one with the + below."
+                                else -> "Nothing matches that."
+                            }
                         )
                     }
                 }
             }
         }
 
-        items(vm.companies, key = { it.id }) { co ->
-            Box(page) { CompanyRow(co) { nav.open(Screen.Company(co.id)) } }
+        items(entries, key = { it.key }) { e ->
+            Box(page) {
+                when (e) {
+                    is CompanyEntry.Weight ->
+                        /* under Fabric Stock, a Weight Calc company that uses it is shown by its Fabric Stock licence */
+                        if (vm.software == SoftwareFilter.FABRIC && !vm.companyEnding && e.fabric != null) {
+                            FabricRow(e.fabric, e.company) { nav.open(Screen.Company(e.company.id, fabric = true)) }
+                        } else {
+                            CompanyRow(e.company, e.fabric) { nav.open(Screen.Company(e.company.id)) }
+                        }
+                    is CompanyEntry.FabricOnly ->
+                        FabricRow(e.company, null) { nav.open(Screen.FabricCompany(e.company.id)) }
+                }
+            }
         }
     }
 }
@@ -320,7 +377,7 @@ fun CompaniesScreen(
 /** A customer in the list: enough to recognise and choose, not everything. 1.6.0 — a colour edge for its state
  *  (licensed blue, demo teal, expired amber, suspended red), as Nexora Mobile marks each kind of record. */
 @Composable
-private fun CompanyRow(company: Company, onOpen: () -> Unit) {
+private fun CompanyRow(company: Company, fabric: FabricCompany?, onOpen: () -> Unit) {
     val c = LocalNexora.current
     val state = company.shownState
     val a = Kinds.state(state, c.isDark)
@@ -361,6 +418,12 @@ private fun CompanyRow(company: Company, onOpen: () -> Unit) {
                 note = if (company.renewSoon) "renew soon" else null
             )
             Mini("Txns", company.txnUsed.toString())
+        }
+
+        /* 1.9.0 — the other software this customer is on, each its own licence */
+        if (fabric != null) {
+            Spacer(Modifier.height(10.dp))
+            WrapRow { SoftwareTag("Fabric Stock · " + fabric.stateText, "fabric") }
         }
     }
 }
@@ -417,7 +480,7 @@ private fun DeletedRow(co: DeletedCompany, onRestore: () -> Unit) {
 }
 
 @Composable
-private fun Mini(label: String, value: String, color: Color? = null, note: String? = null) {
+internal fun Mini(label: String, value: String, color: Color? = null, note: String? = null) {
     val c = LocalNexora.current
     Column {
         Text(

@@ -65,8 +65,11 @@ sealed interface Screen {
 
     /* ---- what opens on top of them ---- */
 
-    /** One customer, with everything that can be done to them. */
-    data class Company(val id: Int) : Screen
+    /** One customer, with everything that can be done to them. 1.9.0 — [fabric]: opened on its Fabric Stock tab. */
+    data class Company(val id: Int, val fabric: Boolean = false) : Screen
+
+    /** 1.9.0 — a company on Fabric Stock alone (no Weight Calc company linked), by its Fabric Stock id. */
+    data class FabricCompany(val id: Int) : Screen
 
     /** New when id is null, editing otherwise. */
     data class EnquiryForm(val id: Int?) : Screen

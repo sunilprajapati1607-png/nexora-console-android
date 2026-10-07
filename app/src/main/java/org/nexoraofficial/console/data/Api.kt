@@ -44,6 +44,14 @@ interface WatchSource {
     suspend fun feedback(): FeedbackData
     suspend fun licences(): ConsoleData
     suspend fun latestRelease(): Release?
+
+    /**
+     * 1.9.0 — every Nexora software, Fabric Stock's companies with it. Read by
+     * the console when it is open; the watch never asks for it — a whole company
+     * list is not fetched in the background (4.72.0, audit 43). null from a
+     * source that cannot say (the tests' stand-ins).
+     */
+    suspend fun products(): ProductsData? = null
 }
 
 /**
@@ -69,6 +77,9 @@ class Api(
     companion object {
         /** What every call says it is, in the `x-console` header (the service reads 'android' or 'web'). */
         const val CONSOLE_NAME = "android"
+
+        /** 1.9.0 — how long a Fabric Stock call may take to answer: its service can take ~55 s to wake. */
+        const val SLOW_READ_MS = 90_000
     }
 
     override suspend fun licences(): ConsoleData = withContext(Dispatchers.IO) {
@@ -161,11 +172,44 @@ class Api(
         )
     }
 
+    /* ---------- 1.9.0: every Nexora software in the one console ---------- */
+
+    /**
+     * Every software the service sells, and Fabric Stock's companies. The
+     * service asks Fabric Stock's own service for them, which sleeps on its
+     * free tier: a first call after a quiet hour can take most of a minute,
+     * so this is read apart from the licences and never holds a screen up.
+     */
+    override suspend fun products(): ProductsData = withContext(Dispatchers.IO) {
+        ProductsData.from(checked("GET", "/admin/api/products", null))
+    }
+
+    /** One change to a Fabric Stock company ({action, ...}); every failure is thrown in the service's own words. */
+    suspend fun fabric(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        checked("POST", "/admin/api/fabric", body)
+    }
+
+    /** One Fabric Stock company with its people and its computers and phones. */
+    suspend fun fabricDetail(id: Int): FabricDetail =
+        FabricDetail.from(fabric(JSONObject().put("action", "detail").put("id", id)))
+
+    /* 200 is done; any other answer is a failure carrying {error, message} — 502 FABRIC_DOWN or
+       FABRIC_KEY when Fabric Stock is asleep or refuses the key — told in the message's words.
+       Read for longer than the rest, for Fabric Stock waking. */
+    private fun checked(method: String, path: String, body: JSONObject?): JSONObject {
+        val (status, r) = exchange(method, path, body, SLOW_READ_MS)
+        val err = r.optString("error")
+        if (status !in 200..299 || err.isNotEmpty()) {
+            throw ApiError(r.optString("message").ifEmpty { err.ifEmpty { "Request failed ($status)" } }, status, err)
+        }
+        return r
+    }
+
     private fun request(method: String, path: String, body: JSONObject?): JSONObject =
         exchange(method, path, body).second
 
     /** One call: the HTTP status and the JSON that came back. */
-    private fun exchange(method: String, path: String, body: JSONObject?): Pair<Int, JSONObject> {
+    private fun exchange(method: String, path: String, body: JSONObject?, readMs: Int = 60_000): Pair<Int, JSONObject> {
         /* 4.72.0 — audit #36: refused before a connection is even opened, so
            the key never leaves the phone for an address that is not Nexora's. */
         ServiceHost.problem(baseUrl, anyHost)?.let { throw ApiError(it) }
@@ -173,7 +217,7 @@ class Api(
         val c = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 30_000
-            readTimeout = 60_000
+            readTimeout = readMs
             /* 4.72.0 (review of audit #36) — a redirect is never followed.
                Android's HttpURLConnection follows one by itself and drops only
                an Authorization header when the host changes, so x-admin-key

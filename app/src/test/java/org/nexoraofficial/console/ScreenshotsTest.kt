@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.json.JSONArray
@@ -237,5 +238,189 @@ class ScreenshotsTest {
         val vm = signedIn(sample, dark = true)
         rule.runOnIdle { vm.inquiryData = org.nexoraofficial.console.data.InquiryData.from(enquiries) }
         tap("Enquiries"); shot("17-enquiry-website-fields-dark")
+    }
+
+    /* ---- 1.9.0: every Nexora software in the one console — Fabric Stock beside Weight Calc, each its own
+       licence. Made-up Fabric Stock companies: one with Shree's GSTIN (linked by the service), one linked by
+       hand to Om Poly Packs, and two on Fabric Stock alone. ---- */
+
+    private fun fabricCo(
+        id: Int, name: String, key: String, state: String, days: Int, companyId: String?, linkedBy: String?,
+        people: Int, seats: Int, devices: Int, self: Boolean = false, gstin: String? = null, plan: String = "STANDARD"
+    ) = JSONObject()
+        .put("id", id).put("name", name).put("licenceKey", key).put("loginId", if (id == 2) "riverside" else JSONObject.NULL)
+        .put("email", if (id == 2) "office@riverside.example" else JSONObject.NULL).put("phone", JSONObject.NULL)
+        .put("gstin", gstin ?: JSONObject.NULL).put("state", state).put("isDemo", state == "DEMO").put("seats", seats)
+        .put("graceDays", 3).put("plan", plan)
+        .put("expiresAt", java.time.Instant.parse("2026-10-07T18:29:59Z").plus(java.time.Duration.ofDays(days.toLong())).toString())
+        .put("periodStartedAt", if (state == "DEMO") "2026-10-04T00:00:00.000Z" else "2026-07-01T00:00:00.000Z")
+        .put("selfRegistered", self).put("notes", JSONObject.NULL).put("createdAt", "2026-10-04T05:00:00.000Z")
+        .put("deletedAt", JSONObject.NULL).put("people", people).put("devices", devices).put("product", "fabric")
+        .put("daysLeft", if (state == "SUSPENDED") 140 else days).put("expired", false)
+        .put("periodDays", if (state == "DEMO") 7 else 365).put("shownState", state).put("endingSoon", false)
+        .put("companyId", companyId ?: JSONObject.NULL).put("linkedBy", linkedBy ?: JSONObject.NULL)
+
+    private val software = JSONObject().put("products", JSONArray()
+        .put(JSONObject("""{"id":"weight","name":"Nexora Bag Weight Calculation","short":"Weight Calc","ok":true}"""))
+        .put(JSONObject().put("id", "fabric").put("name", "Nexora Loom & Fabric Stock").put("short", "Fabric Stock").put("ok", true)
+            .put("companies", JSONArray()
+                .put(fabricCo(1, "Shree Demo Sacks", "NFS-7K2M-Q9TB-0001", "DEMO", 5, "3", "gstin", 2, 3, 2, gstin = "24AAACS1429B1ZQ"))
+                .put(fabricCo(2, "Riverside Looms", "NFS-R4VX-8HPL-0002", "LICENSED", 100, null, null, 3, 5, 3, self = true, gstin = "24ABCDE1234F1Z5", plan = "PRO"))
+                .put(fabricCo(4, "Om Fabrics", "NFS-OM22-T6WD-0004", "SUSPENDED", 140, "7", "hand", 1, 2, 1))
+                .put(fabricCo(5, "Kaveri Weaves", "NFS-KV55-J3NC-0005", "DEMO", 4, null, null, 1, 1, 1, self = true)))))
+
+    private val fabricAsleep = JSONObject("""{"products":[
+        {"id":"weight","name":"Nexora Bag Weight Calculation","short":"Weight Calc","ok":true},
+        {"id":"fabric","name":"Nexora Loom & Fabric Stock","short":"Fabric Stock","ok":false,"error":"FABRIC_DOWN",
+         "message":"Fabric Stock's service did not answer in time — it may still be waking up."}]}""")
+
+    /* one Fabric Stock company read on its own: its people and its computers and phones */
+    private fun detail(id: Int, name: String) = org.nexoraofficial.console.data.FabricDetail(
+        org.nexoraofficial.console.data.ProductsData.from(software).fabric!!.companies.first { it.id == id },
+        listOf(
+            org.nexoraofficial.console.data.FabricUser.from(JSONObject("""{"id":11,"name":"Asha Patel","email":"asha@example.com","role":"ADMIN",
+                "scope":"ALL","active":true,"sessionDevice":"7f3c9a21-55de-4c1b","sessionAt":"2026-10-07T03:40:00Z",
+                "lastLoginAt":"2026-10-07T03:40:00Z","lastSeenAt":"2026-10-07T05:55:00Z"}""")),
+            org.nexoraofficial.console.data.FabricUser.from(JSONObject("""{"id":12,"name":"Ravi Shah","role":"USER","scope":"OWN",
+                "permissions":{"stock":true,"looms":true,"reports":false},"active":true,"lastLoginAt":"2026-10-06T10:00:00Z"}"""))
+        ),
+        listOf(
+            org.nexoraofficial.console.data.FabricDevice.from(JSONObject("""{"id":"d1","name":"STORE-PC","platform":"desktop","approved":true,
+                "approvedBy":"Asha Patel","pending":false,"revokedBy":null,"lastSeen":"2026-10-07T05:55:00Z","computerNo":1,"appVersion":"0.6.0",
+                "signedIn":{"id":11,"name":"Asha Patel"}}""")),
+            org.nexoraofficial.console.data.FabricDevice.from(JSONObject("""{"id":"d2","name":"Ravi's phone","platform":"mobile","approved":false,
+                "pending":true,"revokedBy":null,"lastSeen":"2026-10-07T04:10:00Z","appVersion":"0.6.0"}""")),
+            org.nexoraofficial.console.data.FabricDevice.from(JSONObject("""{"id":"d3","name":"OLD-LAPTOP","platform":"desktop","approved":true,
+                "pending":false,"revokedBy":"NEXORA","lastSeen":"2026-09-20T09:00:00Z","computerNo":2,"appVersion":"0.5.2"}"""))
+        )
+    ).also { check(it.company.name == name) }
+
+    private fun withSoftware(vm: ConsoleViewModel, json: JSONObject = software) {
+        rule.runOnIdle {
+            vm.products = org.nexoraofficial.console.data.ProductsData.from(json)
+            vm.productsLoad = Load.READY
+        }
+        rule.waitForIdle()
+    }
+
+    /* The company screen asks for the detail (a closed port here, so it fails at once); the made-up one is
+       put in its place once that answer is in. */
+    private fun showDetail(vm: ConsoleViewModel, d: org.nexoraofficial.console.data.FabricDetail) {
+        val end = System.currentTimeMillis() + 15_000
+        while (vm.fabricDetailBusy) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            rule.waitForIdle()
+            if (System.currentTimeMillis() > end) error("the detail never answered")
+            Thread.sleep(10)
+        }
+        rule.runOnIdle {
+            vm.fabricDetail = d
+            vm.fabricDetailError = null
+        }
+        rule.waitForIdle()
+    }
+
+    private fun scrollTo(text: String) {
+        rule.onNode(androidx.compose.ui.test.hasScrollToNodeAction())
+            .performScrollToNode(androidx.compose.ui.test.hasText(text))
+        rule.waitForIdle()
+    }
+
+    @Test
+    fun companiesAcrossTheSoftware() {
+        val vm = signedIn(sample)
+        withSoftware(vm)
+        tap("Companies"); shot("18-companies-all-software")
+        tap("Fabric Stock 4"); shot("19-companies-fabric-stock")
+    }
+
+    @Test
+    fun companiesAcrossTheSoftwareDark() {
+        val vm = signedIn(sample, dark = true)
+        withSoftware(vm)
+        tap("Companies"); shot("18-companies-all-software-dark")
+    }
+
+    @Test
+    fun fabricStockNotConnected() {
+        val vm = signedIn(sample)
+        withSoftware(vm, fabricAsleep)
+        tap("Companies"); shot("20-companies-fabric-not-connected")
+    }
+
+    @Test
+    fun aWeightCalcCompanysFabricStockTab() {
+        val vm = signedIn(sample)
+        withSoftware(vm)
+        tap("Companies"); tap("Shree Demo Sacks"); tap("Fabric Stock")
+        showDetail(vm, detail(1, "Shree Demo Sacks"))
+        shot("21-company-fabric-tab-linked")
+        scrollTo("Asha Patel"); shot("21-company-fabric-tab-linked-people")
+        scrollTo("OLD-LAPTOP"); shot("21-company-fabric-tab-linked-devices")
+        scrollTo("What You Can Do"); shot("21-company-fabric-tab-linked-actions")
+    }
+
+    @Test
+    fun aWeightCalcCompanysFabricStockTabDark() {
+        val vm = signedIn(sample, dark = true)
+        withSoftware(vm)
+        tap("Companies"); tap("Shree Demo Sacks"); tap("Fabric Stock")
+        showDetail(vm, detail(1, "Shree Demo Sacks"))
+        shot("21-company-fabric-tab-linked-dark")
+    }
+
+    @Test
+    fun aWeightCalcCompanyNotOnFabricStock() {
+        val vm = signedIn(sample)
+        withSoftware(vm)
+        tap("Companies"); tap("Vijay Woven Bags"); tap("Fabric Stock")
+        shot("22-company-fabric-tab-not-linked")
+    }
+
+    /* the question that links a Weight Calc company to the Fabric Stock company it already is (no search field
+       with this few to choose from, so nothing takes focus) — the whole screen, the dialog being a window of its own */
+    @OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
+    @Test
+    fun linkingAnExistingFabricStockCompany() {
+        val vm = signedIn(sample)
+        withSoftware(vm)
+        tap("Companies"); tap("Vijay Woven Bags"); tap("Fabric Stock")
+        tap("Link An Existing Fabric Stock Company")
+        tap("Kaveri Weaves")
+        com.github.takahirom.roborazzi.captureScreenRoboImage(out.resolve("26-link-existing-fabric-company.png").path)
+    }
+
+    @Test
+    fun aFabricStockOnlyCompany() {
+        val vm = signedIn(sample)
+        withSoftware(vm)
+        tap("Companies"); tap("Riverside Looms")
+        showDetail(vm, detail(2, "Riverside Looms"))
+        shot("23-fabric-only-company")
+        scrollTo("What You Can Do"); shot("23-fabric-only-company-actions")
+    }
+
+    @Test
+    fun theDashboardBySoftware() {
+        val vm = signedIn(sample)
+        withSoftware(vm)
+        scrollTo("By Software"); shot("24-dashboard-by-software")
+    }
+
+    @Test
+    fun theDashboardBySoftwareNotConnectedDark() {
+        val vm = signedIn(sample, dark = true)
+        withSoftware(vm, fabricAsleep)
+        scrollTo("By Software"); shot("24-dashboard-by-software-not-connected-dark")
+    }
+
+    @Test
+    fun aNewCompanyOnWhichSoftware() {
+        val vm = signedIn(sample)
+        withSoftware(vm)
+        tap("Companies"); tap("New company")
+        rule.runOnIdle { vm.newCompany = vm.newCompany.copy(software = NewSoftware.FABRIC, fabricState = "DEMO", days = "7") }
+        rule.waitForIdle()
+        shot("25-new-company-software")
     }
 }

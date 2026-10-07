@@ -208,7 +208,8 @@ fun AppScaffold(vm: ConsoleViewModel) {
                 Screen.Feedback -> FeedbackScreen(vm, nav, gutter, page)
                 Screen.More -> MoreScreen(vm, nav, gutter, page, exportAll)
 
-                is Screen.Company -> CompanyScreen(vm, nav, screen.id, gutter, page) { ask = it }
+                is Screen.Company -> CompanyScreen(vm, nav, screen.id, gutter, page, screen.fabric) { ask = it }
+                is Screen.FabricCompany -> FabricCompanyScreen(vm, nav, screen.id, gutter, page) { ask = it }
                 is Screen.FeedbackDetail -> FeedbackDetailScreen(vm, nav, screen.id, gutter, page) { ask = it }
                 is Screen.EnquiryForm -> EnquiryFormScreen(vm, nav, screen.id, gutter, page, wide)
                 Screen.NewCompany -> NewCompanyScreen(vm, nav, gutter, page, wide)
@@ -291,6 +292,7 @@ fun IconTap(
 private fun titleOf(screen: Screen, vm: ConsoleViewModel): String = when (screen) {
     is Screen.Root -> screen.title
     is Screen.Company -> vm.data.companies.find { it.id == screen.id }?.name ?: "Company"
+    is Screen.FabricCompany -> vm.fabricById(screen.id)?.name ?: "Fabric Stock"
     /* 1.6.0 — headings in Proper Case (a company's own name is shown as it was typed) */
     is Screen.EnquiryForm -> if (screen.id == null) "New Enquiry" else "Edit Enquiry"
     is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.let { if (it.isBug) "Problem Report" else "Feedback" } ?: "Report"
@@ -311,6 +313,7 @@ private fun subtitleOf(screen: Screen, vm: ConsoleViewModel): String? = when (sc
     Screen.Feedback -> "${vm.feedbackData.feedback.size} in all · ${vm.openFeedback} open · ${vm.openBugs} problems"
     is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.plant
     is Screen.Company -> vm.data.companies.find { it.id == screen.id }?.licenceKey
+    is Screen.FabricCompany -> vm.fabricById(screen.id)?.let { "Fabric Stock · " + it.licenceKey }
     else -> null
 }
 

@@ -7,15 +7,16 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/* ---- small readers, so a missing column is a blank and never a crash ---- */
-private fun JSONObject.str(k: String): String? {
+/* ---- small readers, so a missing column is a blank and never a crash ----
+   1.9.0 — internal (were private), so Fabric Stock's models (Software.kt) read the same way */
+internal fun JSONObject.str(k: String): String? {
     if (!has(k) || isNull(k)) return null
     val v = optString(k, "")
     return if (v.isEmpty()) null else v
 }
 
-private fun JSONObject.int(k: String, dflt: Int = 0): Int = optInt(k, dflt)
-private fun JSONObject.bool(k: String): Boolean = optBoolean(k, false)
+internal fun JSONObject.int(k: String, dflt: Int = 0): Int = optInt(k, dflt)
+internal fun JSONObject.bool(k: String): Boolean = optBoolean(k, false)
 
 /** A customer — the company IS the licence: one key, N seats, one clock. */
 data class Company(

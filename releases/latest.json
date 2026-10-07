@@ -1,9 +1,9 @@
 {
-    "versionCode": 20,
-    "versionName": "1.8.1",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.8.1-20.apk",
-    "notes": "Website enquiries show the plant’s location, its website and the product range (BOPP bags, tape, fabric, BOPP printing, block bottom, pinch bottom, other).",
-    "sha256": "5f5c66ac63fbe1737260d0cbb17feba383d3b7ab921a09cf25835286a314da47",
-    "sizeBytes": 11795566,
-    "publishedAt": "2026-10-02T15:50:17Z"
+    "versionCode": 21,
+    "versionName": "1.9.0",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-1.9.0-21.apk",
+    "notes": "Every Nexora software in the one console: Weight Calc and Fabric Stock side by side, each with its own licence. Companies: All / Weight Calc / Fabric Stock; a company opens on a Weight Calc | Fabric Stock switch; renew, licence, suspend, restore, seats, offline days, administrator, passcode, people and computers for Fabric Stock; start Fabric Stock for a Weight Calc company; Dashboard By Software; New company for either or both.",
+    "sha256": "f6714c2c8efc945e515cff383c6a5f7732780d16af65162bc9d1f681cfdb2d67",
+    "sizeBytes": 11881910,
+    "publishedAt": "2026-10-07T16:57:02Z"
 }

@@ -85,6 +85,23 @@ sealed interface Ask {
         val expected: String,
         val onOk: (String) -> Unit
     ) : Ask
+
+    /**
+     * 1.9.0 — one of a list: the company a Fabric Stock company belongs to,
+     * or the other way round. Tap one, then [confirmText]; a search narrows
+     * a long list.
+     */
+    data class Pick(
+        val title: String,
+        val body: String,
+        val options: List<Option>,
+        val confirmText: String = "Link",
+        val empty: String = "Nothing to choose from.",
+        val onPick: (Int) -> Unit
+    ) : Ask {
+        /** [id] goes back to [onPick]; [line] is what tells two of the same name apart. */
+        data class Option(val id: Int, val title: String, val line: String)
+    }
 }
 
 /**
@@ -257,6 +274,54 @@ fun AskHost(ask: Ask?, onClose: () -> Unit) {
                     Spacer(Modifier.height(4.dp))
                     Text(it, color = LocalNexora.current.bad, fontSize = 12.5f.sp)
                 }
+            }
+        }
+
+        is Ask.Pick -> {
+            var chosen by remember(ask) { mutableStateOf<Int?>(null) }
+            var find by remember(ask) { mutableStateOf("") }
+            val c = LocalNexora.current
+            DialogShell(
+                title = ask.title,
+                body = ask.body,
+                onDismiss = onClose,
+                actions = {
+                    ConsoleButton("Cancel", onClose)
+                    ConsoleButton(
+                        ask.confirmText,
+                        { chosen?.let { ask.onPick(it); onClose() } },
+                        kind = ButtonKind.Primary,
+                        enabled = chosen != null
+                    )
+                }
+            ) {
+                Spacer(Modifier.height(12.dp))
+                if (ask.options.isEmpty()) {
+                    Help(ask.empty)
+                    return@DialogShell
+                }
+                if (ask.options.size > 6) {
+                    ConsoleField(null, find, { find = it }, placeholder = "Find…", imeAction = ImeAction.Done)
+                    Spacer(Modifier.height(8.dp))
+                }
+                val t = find.trim().lowercase()
+                ask.options.filter { t.isEmpty() || it.title.lowercase().contains(t) || it.line.lowercase().contains(t) }
+                    .forEach { o ->
+                        val on = chosen == o.id
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (on) c.accentBg else MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .border(1.dp, if (on) c.accent else c.border, RoundedCornerShape(12.dp))
+                                .pressable { chosen = o.id }
+                                .padding(horizontal = 12.dp, vertical = 9.dp)
+                        ) {
+                            Text(o.title, color = c.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            if (o.line.isNotBlank()) Small(o.line)
+                        }
+                    }
             }
         }
 

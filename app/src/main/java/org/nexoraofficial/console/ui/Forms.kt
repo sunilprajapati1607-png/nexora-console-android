@@ -26,6 +26,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import org.nexoraofficial.console.ConsoleViewModel
 import org.nexoraofficial.console.InquiryForm
+import org.nexoraofficial.console.Msg
+import org.nexoraofficial.console.NewSoftware
 
 /* ======================================================================
    FORM ENTRY, AS ITS OWN SCREEN.
@@ -188,6 +190,8 @@ fun NewCompanyScreen(
     wide: Boolean
 ) {
     val f = vm.newCompany
+    val fabricOnly = f.software == NewSoftware.FABRIC
+    val fabricDemo = fabricOnly && f.fabricState == "DEMO"
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -195,6 +199,48 @@ fun NewCompanyScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        /* 1.9.0 — which Nexora software: each is a licence of its own (its own key, days, seats and
+           people); Both makes the Weight Calc company, then Fabric Stock's linked to it */
+        item {
+            Box(page) {
+                ConsoleCard {
+                    Text("Which Software", style = CardTitleStyle)
+                    Small("each one is a licence of its own — its own key, days, seats and people")
+                    Spacer(Modifier.height(10.dp))
+                    WrapRow {
+                        Chip("Weight Calc", f.software == NewSoftware.WEIGHT) { vm.newCompany = f.copy(software = NewSoftware.WEIGHT) }
+                        Chip("Fabric Stock", fabricOnly) { vm.newCompany = f.copy(software = NewSoftware.FABRIC) }
+                        Chip("Both", f.software == NewSoftware.BOTH) { vm.newCompany = f.copy(software = NewSoftware.BOTH) }
+                    }
+                    if (fabricOnly) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("Fabric Stock starts", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(Modifier.height(6.dp))
+                        WrapRow {
+                            Chip("Licensed", !fabricDemo) {
+                                vm.newCompany = f.copy(fabricState = "LICENSED", days = if (f.days == "7") "365" else f.days)
+                            }
+                            Chip("On A Demo", fabricDemo) {
+                                vm.newCompany = f.copy(fabricState = "DEMO", days = if (f.days == "365") "7" else f.days)
+                            }
+                        }
+                    }
+                    if (f.software == NewSoftware.BOTH) {
+                        Spacer(Modifier.height(10.dp))
+                        Help(
+                            "The Weight Calc company is made first, then its Fabric Stock company, linked to it. Both " +
+                                "start licensed with the seats, days and offline days below — two keys to give the customer."
+                        )
+                    }
+                    val problem = vm.fabricProblem
+                    if (f.software != NewSoftware.WEIGHT && problem != null) {
+                        Spacer(Modifier.height(10.dp))
+                        MessageStrip(Msg("Fabric Stock is not connected right now: $problem", Msg.Kind.WARN), onDismiss = {})
+                    }
+                }
+            }
+        }
+
         item {
             Box(page) {
                 ConsoleCard {
@@ -229,7 +275,7 @@ fun NewCompanyScreen(
                             Modifier.width(110.dp), numeric = true
                         )
                         ConsoleField(
-                            "Licence days", f.days, { vm.newCompany = f.copy(days = it) },
+                            if (fabricDemo) "Demo days" else "Licence days", f.days, { vm.newCompany = f.copy(days = it) },
                             Modifier.width(140.dp), numeric = true
                         )
                         ConsoleField(

@@ -37,6 +37,16 @@ import org.nexoraofficial.console.data.MailAddress
 import org.nexoraofficial.console.data.ServiceHost
 import org.nexoraofficial.console.data.Updates
 import org.nexoraofficial.console.data.ServiceSettings
+import org.nexoraofficial.console.data.CompanyEntry
+import org.nexoraofficial.console.data.CompanyList
+import org.nexoraofficial.console.data.FabricCompany
+import org.nexoraofficial.console.data.FabricCounts
+import org.nexoraofficial.console.data.FabricDetail
+import org.nexoraofficial.console.data.ProductsData
+import org.nexoraofficial.console.data.SoftwareCounts
+import org.nexoraofficial.console.data.SoftwareFilter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 
 /** The console's own .msg strip: one line, three readings, gone in six seconds. */
 data class Msg(val text: String, val kind: Kind) {
@@ -49,6 +59,15 @@ data class Msg(val text: String, val kind: Kind) {
  * Delete has archived, which can be restored for 30 days (audit #40).
  */
 enum class CompanyView { ALL, ENDING, DELETED }
+
+/**
+ * 1.9.0 — where a read that may take a while has got to: not asked yet,
+ * on its way, in, or failed (Fabric Stock's companies — its service sleeps).
+ */
+enum class Load { IDLE, LOADING, READY, FAILED }
+
+/** 1.9.0 — which software a new company is made on. Both makes the Weight Calc one first, then Fabric Stock's linked to it. */
+enum class NewSoftware { WEIGHT, FABRIC, BOTH }
 
 /** The editable copy of the service settings, while the owner is changing them. */
 data class SettingsForm(
@@ -109,7 +128,10 @@ data class NewCompanyForm(
     val days: String = "365",
     val graceDays: String = "0",
     val gstin: String = "",
-    val email: String = ""
+    val email: String = "",
+    /* 1.9.0 — on which software, and (Fabric Stock alone) whether it starts licensed or on a demo */
+    val software: NewSoftware = NewSoftware.WEIGHT,
+    val fabricState: String = "LICENSED"
 )
 
 class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
@@ -135,6 +157,10 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     var busy by mutableStateOf(false)
         private set
     var msg by mutableStateOf<Msg?>(null)
+        private set
+    /* 1.9.0 — the last thing said, kept after its strip has cleared itself: the tests read it (under
+       Robolectric the clock can leap past the strip's six seconds between two looks) */
+    internal var lastSaid: Msg? = null
         private set
 
     /* ---- what is open, filtered, searched ---- */
@@ -254,6 +280,75 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     val demoCount get() = data.companies.count { it.isDemo }
     val runningCount get() = data.licences.count { !it.expired && it.state != "REVOKED" }
 
+    /* ---- 1.9.0: every Nexora software in the one console ----
+
+       "nexora console page single rahese badhi service tya thij update chalu
+       bandh thase" (owner, 2026-10-07). Weight Calc is `data`, as it always
+       was; the other software come from GET /admin/api/products, read apart
+       and never in the way: Fabric Stock's free service sleeps, and its
+       companies can take most of a minute to arrive. Each software keeps its
+       own licence — nothing here merges two. */
+
+    /* internal (not private) so the tests can draw the console from made-up software, as `data` */
+    var products by mutableStateOf<ProductsData?>(null)
+        internal set
+    var productsLoad by mutableStateOf(Load.IDLE)
+        internal set
+    var productsError by mutableStateOf<String?>(null)
+        internal set
+    private var productsJob: Job? = null
+
+    /** Which software the Companies list shows. */
+    var software by mutableStateOf(SoftwareFilter.ALL)
+
+    /* The Fabric Stock company open on screen, with its people and its computers and phones. */
+    var fabricDetail by mutableStateOf<FabricDetail?>(null)
+        internal set
+    var fabricDetailBusy by mutableStateOf(false)
+        private set
+    var fabricDetailError by mutableStateOf<String?>(null)
+        internal set
+    /** The Fabric Stock company whose screen (or tab) is showing — read again after a refresh or a change. */
+    var fabricOpen by mutableStateOf<Int?>(null)
+    private var fabricDetailJob: Job? = null
+
+    /**
+     * Why Fabric Stock cannot be shown, in words for the owner — null while
+     * it can (or before it has been asked). Either the list of software would
+     * not come at all, or it came and Fabric Stock's own service was not
+     * reachable (asleep, or refusing the key).
+     */
+    val fabricProblem: String?
+        get() {
+            if (productsLoad == Load.FAILED) return productsError ?: "The software list could not be read."
+            val p = products ?: return null
+            val f = p.fabric ?: return "This service does not list Fabric Stock."
+            return if (f.ok) null else f.problem
+        }
+
+    /** Fabric Stock's live companies — none while it is not connected. */
+    val fabricCompanies: List<FabricCompany>
+        get() = if (fabricProblem != null) emptyList()
+        else products?.fabric?.companies.orEmpty().filter { it.deletedAt == null }
+
+    /** Whether Fabric Stock's companies are in hand (so "none linked" really means none). */
+    val fabricReady: Boolean get() = products?.fabric != null && fabricProblem == null
+
+    fun fabricById(id: Int): FabricCompany? = fabricCompanies.find { it.id == id }
+
+    /** The Fabric Stock company that belongs to this Weight Calc company, if any. */
+    fun fabricFor(companyId: Int): FabricCompany? = CompanyList.linked(data.companies, fabricCompanies)[companyId]
+
+    /** The Fabric Stock companies on their own — what may be linked to a Weight Calc company. */
+    val fabricOnly: List<FabricCompany> get() = CompanyList.fabricOnly(data.companies, fabricCompanies)
+
+    /** The Companies list across the software, after the chip, the search and the ending-soon view. */
+    val companyEntries: List<CompanyEntry>
+        get() = CompanyList.entries(data.companies, fabricCompanies, software, companyQuery, companyEnding)
+
+    val softwareCounts: SoftwareCounts get() = CompanyList.counts(data.companies, fabricCompanies)
+    val fabricCounts: FabricCounts get() = FabricCounts.of(fabricCompanies)
+
     /** Opened once at startup when a key was remembered. */
     fun resume() {
         if (!signedIn && key.isNotBlank()) load()
@@ -310,6 +405,9 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 loadInquiries(quiet = true)
                 loadFeedback(quiet = true)
                 loadBroadcasts()
+                /* 1.9.0 — and the other software, last and apart: Fabric Stock may take a minute to wake */
+                loadProducts()
+                fabricOpen?.let { loadFabricDetail(it, quiet = true) }
                 /* And whether a newer build of this application exists. */
                 checkForUpdate()
             } catch (e: Exception) {
@@ -340,12 +438,20 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         companyView = CompanyView.ALL
         people = null
         msg = null
+        productsJob?.cancel()
+        products = null
+        productsLoad = Load.IDLE
+        productsError = null
+        software = SoftwareFilter.ALL
+        fabricDetail = null
+        fabricOpen = null
     }
 
     /* 4.72.0 — [holdMs]: a long answer that must be read (Delete's) stays longer than six seconds */
     fun say(text: String, kind: Msg.Kind, holdMs: Long = 6_000) {
         val m = Msg(text, kind)
         msg = m
+        lastSaid = m
         viewModelScope.launch {
             delay(holdMs)
             if (msg === m) msg = null
@@ -584,6 +690,12 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             say("A company name is required.", Msg.Kind.ERR)
             return
         }
+        /* 1.9.0 — on Fabric Stock alone, or on both (Weight Calc first, then Fabric Stock linked to it) */
+        when (f.software) {
+            NewSoftware.FABRIC -> return createFabricOnly(f)
+            NewSoftware.BOTH -> return createOnBoth(f)
+            NewSoftware.WEIGHT -> Unit
+        }
         companyAction(
             JSONObject()
                 .put("action", "create")
@@ -696,6 +808,252 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         JSONObject().put("id", companyId).put("action", "userdel").put("userId", userId),
         "Removed.", reload = true
     )
+
+    /* ---------- 1.9.0: Fabric Stock — its own licences, run from here ---------- */
+
+    /* A newer read replaces an older one still on its way (a Refresh, then a change). */
+    private var productsGen = 0
+    private var detailGen = 0
+
+    /**
+     * The software and Fabric Stock's companies. Quiet: what went wrong is
+     * said where it matters — a card with Retry on the Companies list and on
+     * the company — never as a red strip, and the Weight Calc screens never
+     * wait for it.
+     */
+    fun loadProducts() {
+        if (key.isBlank()) return
+        val gen = ++productsGen
+        productsJob?.cancel()
+        productsLoad = Load.LOADING
+        productsJob = viewModelScope.launch {
+            try {
+                val p = api.products()
+                if (gen != productsGen) return@launch
+                products = p
+                productsError = null
+                productsLoad = Load.READY
+            } catch (e: Exception) {
+                if (gen != productsGen || e is CancellationException) return@launch
+                products = null
+                productsError = productsProblem(e)
+                productsLoad = Load.FAILED
+            }
+        }
+    }
+
+    private fun productsProblem(e: Exception): String {
+        val a = e as? ApiError ?: return "The software list could not be read."
+        return if (a.status == 404) "This service does not list the other software yet — it needs the service update."
+        else a.message ?: "The software list could not be read."
+    }
+
+    /** One Fabric Stock company's people and computers and phones. [quiet]: a re-read; a failure leaves what is shown. */
+    fun loadFabricDetail(id: Int, quiet: Boolean = false) {
+        if (key.isBlank()) return
+        val gen = ++detailGen
+        fabricDetailJob?.cancel()
+        if (fabricDetail?.company?.id != id) fabricDetail = null
+        if (!quiet) fabricDetailError = null
+        fabricDetailBusy = true
+        fabricDetailJob = viewModelScope.launch {
+            try {
+                val d = api.fabricDetail(id)
+                if (gen != detailGen) return@launch
+                fabricDetail = d
+                fabricDetailError = null
+            } catch (e: Exception) {
+                if (gen != detailGen || e is CancellationException) return@launch
+                fabricDetailError = (e as? ApiError)?.message ?: "Could not read this company."
+            } finally {
+                if (gen == detailGen) fabricDetailBusy = false
+            }
+        }
+    }
+
+    /**
+     * Every Fabric Stock change goes through here, as every Weight Calc one
+     * goes through companyAction: one busy mark, the service's warning or
+     * [okText] on success, its own words on failure (502 FABRIC_DOWN when
+     * Fabric Stock is asleep, FABRIC_KEY when it refuses the key) — and then
+     * Fabric Stock's companies, and the one open, are read again.
+     */
+    fun fabricAction(body: JSONObject, okText: String? = null, then: (JSONObject) -> Unit = {}) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.fabric(body)
+                val warn = r.optString("warning")
+                when {
+                    warn.isNotEmpty() -> say(warn, Msg.Kind.WARN)
+                    okText != null -> say(okText, Msg.Kind.OK)
+                }
+                then(r)
+                loadProducts()
+                fabricOpen?.let { loadFabricDetail(it, quiet = true) }
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    private fun fabricUpdate(id: Int, okText: String, fill: JSONObject.() -> Unit) =
+        fabricAction(JSONObject().put("action", "update").put("id", id).apply(fill), okText)
+
+    /** A demo made a paying licence: a year from today. */
+    fun fabricMakeLicensed(f: FabricCompany) =
+        fabricUpdate(f.id, "${f.name} is licensed on Fabric Stock for a year.") { put("state", "LICENSED").put("days", 365) }
+
+    /**
+     * [add] days more. Fabric Stock renews by starting a new period from
+     * today, so the days still left are sent with them (FabricCompany.renewDays)
+     * and nothing already paid for is lost.
+     */
+    fun fabricAddDays(f: FabricCompany, add: Int) =
+        fabricUpdate(f.id, "Fabric Stock now ends on ${Fmt.day(f.renewEnd(add).toString())}.") { put("days", f.renewDays(add)) }
+
+    fun fabricSeats(id: Int, seats: Int) = fabricUpdate(id, "Seats saved.") { put("seats", seats) }
+    fun fabricGrace(id: Int, days: Int) = fabricUpdate(id, "Offline days saved.") { put("graceDays", days) }
+    fun fabricRename(id: Int, name: String) = fabricUpdate(id, "Renamed.") { put("name", name.trim()) }
+    fun fabricGstin(id: Int, gstin: String) = fabricUpdate(id, "GSTIN saved.") { put("gstin", gstin.trim().uppercase()) }
+    fun fabricEmail(id: Int, email: String) = fabricUpdate(id, "Email saved.") { put("email", email.trim()) }
+    fun fabricPhone(id: Int, phone: String) = fabricUpdate(id, "Mobile saved.") { put("phone", phone.trim()) }
+    fun fabricNote(id: Int, notes: String) = fabricUpdate(id, "Note saved.") { put("notes", notes.trim()) }
+
+    fun fabricSuspend(f: FabricCompany) =
+        fabricAction(JSONObject().put("action", "suspend").put("id", f.id), "${f.name} is suspended on Fabric Stock.")
+
+    fun fabricResume(f: FabricCompany) =
+        fabricAction(JSONObject().put("action", "resume").put("id", f.id), "${f.name} runs on Fabric Stock again.")
+
+    fun fabricAdministrator(id: Int, name: String, pin: String, email: String = "") =
+        fabricAction(
+            JSONObject().put("action", "adminuser").put("id", id).put("name", name.trim()).put("pin", pin)
+                .apply { if (email.isNotBlank()) put("email", email.trim()) },
+            "Done."
+        )
+
+    fun fabricPasscode(id: Int, loginId: String, passcode: String) =
+        fabricAction(
+            JSONObject().put("action", "passcode").put("id", id).put("passcode", passcode)
+                .apply { if (loginId.isNotBlank()) put("loginId", loginId.trim()) },
+            "Done."
+        )
+
+    fun fabricSignOut(id: Int, userId: Any) =
+        fabricAction(JSONObject().put("action", "usersignout").put("id", id).put("userId", userId), "Signed out.")
+
+    /** Withdraw a Fabric Stock computer or phone; Give back undoes only what Nexora withdrew. */
+    fun fabricRevoke(deviceId: Any) =
+        fabricAction(JSONObject().put("action", "revoke").put("deviceId", deviceId), "Withdrawn.")
+
+    fun fabricGiveBack(deviceId: Any) =
+        fabricAction(JSONObject().put("action", "restore").put("deviceId", deviceId), "Given back.")
+
+    fun fabricLink(id: Int, companyId: Int, name: String) =
+        fabricAction(JSONObject().put("action", "link").put("id", id).put("companyId", companyId), "Linked to $name.")
+
+    /** Two different companies, even though the GSTIN is the same. */
+    fun fabricApart(id: Int) =
+        fabricAction(JSONObject().put("action", "apart").put("id", id), "Kept apart — two different companies.")
+
+    /** Forget the hand link; the GSTIN rule decides again. */
+    fun fabricUnlink(id: Int) =
+        fabricAction(JSONObject().put("action", "unlink").put("id", id), "Unlinked.")
+
+    /**
+     * Fabric Stock for a Weight Calc company that has none: a 7-day demo, or a
+     * year's licence, made on its own licence but with the company's name,
+     * GSTIN, email, mobile, seats and offline days to start from — and linked
+     * to it at once (linkTo).
+     */
+    fun startFabric(co: Company, demo: Boolean) =
+        fabricAction(
+            fabricCreateBody(co.name, if (demo) "DEMO" else "LICENSED", if (demo) 7 else 365, co.seats, co.graceDays,
+                co.gstin, co.email, co.phone).put("linkTo", co.id)
+        ) { r -> say(fabricCreated(r, "Fabric Stock started for ${co.name}"), Msg.Kind.OK, holdMs = 15_000) }
+
+    private fun fabricCreateBody(
+        name: String, state: String, days: Int, seats: Int, graceDays: Int,
+        gstin: String?, email: String?, phone: String?
+    ): JSONObject = JSONObject()
+        .put("action", "create")
+        .put("name", name.trim())
+        .put("state", state)
+        .put("days", days)
+        .put("seats", seats.coerceAtLeast(1))
+        .put("graceDays", graceDays.coerceAtLeast(0))
+        .apply {
+            gstin?.trim()?.takeIf { it.isNotEmpty() }?.let { put("gstin", it.uppercase()) }
+            email?.trim()?.takeIf { it.isNotEmpty() }?.let { put("email", it) }
+            phone?.trim()?.takeIf { it.isNotEmpty() }?.let { put("phone", it) }
+        }
+
+    /* "… Fabric Stock licence key NFS-… — give this to the customer." */
+    private fun fabricCreated(r: JSONObject, lead: String): String {
+        val key = r.optJSONObject("company")?.optString("licenceKey").orEmpty()
+        return if (key.isEmpty()) "$lead." else "$lead. Fabric Stock licence key $key — give this to the customer; it is not the Weight Calc key."
+    }
+
+    private fun createFabricOnly(f: NewCompanyForm) {
+        val demo = f.fabricState == "DEMO"
+        fabricAction(
+            fabricCreateBody(f.name, f.fabricState, f.days.toIntOrNull() ?: if (demo) 7 else 365,
+                f.seats.toIntOrNull() ?: 1, f.graceDays.toIntOrNull() ?: 0, f.gstin, f.email, null)
+        ) { r ->
+            showNewCompany = false
+            newCompany = NewCompanyForm()
+            say(fabricCreated(r, "${f.name.trim()} created on Fabric Stock"), Msg.Kind.OK, holdMs = 15_000)
+        }
+    }
+
+    /* Both: the Weight Calc company first, then Fabric Stock's linked to it — one after the other, so a
+       Fabric Stock that is asleep or refuses leaves the Weight Calc company made and says so. */
+    private fun createOnBoth(f: NewCompanyForm) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val seats = f.seats.toIntOrNull() ?: 1
+                val days = f.days.toIntOrNull() ?: 365
+                val grace = f.graceDays.toIntOrNull() ?: 0
+                val r = api.company(
+                    JSONObject().put("action", "create").put("name", f.name.trim()).put("seats", seats).put("days", days)
+                        .put("graceDays", grace).put("gstin", f.gstin.trim().uppercase()).put("email", f.email.trim())
+                )
+                val err = r.optString("error")
+                if (err.isNotEmpty()) {
+                    say(err, Msg.Kind.ERR)
+                    return@launch
+                }
+                showNewCompany = false
+                newCompany = NewCompanyForm()
+                val co = r.optJSONObject("company")
+                val weightKey = co?.optString("licence_key").orEmpty()
+                val weightId = co?.optInt("id") ?: 0
+                val made = "${f.name.trim()} created. Weight Calc licence key $weightKey"
+                try {
+                    val body = fabricCreateBody(f.name, "LICENSED", days, seats, grace, f.gstin, f.email, null)
+                    if (weightId > 0) body.put("linkTo", weightId)
+                    val fr = api.fabric(body)
+                    val fabricKey = fr.optJSONObject("company")?.optString("licenceKey").orEmpty()
+                    say("$made; Fabric Stock licence key $fabricKey — two keys, give both to the customer.", Msg.Kind.OK, holdMs = 20_000)
+                } catch (e: Exception) {
+                    say(
+                        "$made. Fabric Stock was not started: ${(e as? ApiError)?.message ?: "something went wrong."} " +
+                            "Open the company's Fabric Stock tab to start it.",
+                        Msg.Kind.WARN, holdMs = 20_000
+                    )
+                }
+                load()
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+        }
+    }
 
     /* ---------- GST ---------- */
 

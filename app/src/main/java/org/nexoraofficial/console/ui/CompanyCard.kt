@@ -15,7 +15,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import org.nexoraofficial.console.Load
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -44,12 +50,28 @@ fun CompanyScreen(
     companyId: Int,
     gutter: PaddingValues,
     page: Modifier,
+    startFabric: Boolean = false,
     onAsk: (Ask) -> Unit
 ) {
     val company = vm.data.companies.find { it.id == companyId }
 
     /* Opening the screen is what asks for the people. */
     LaunchedEffect(companyId) { vm.loadPeople(companyId) }
+
+    /* 1.9.0 — which software is shown: Weight Calc (all the screen ever showed) or Fabric Stock */
+    var fabricTab by rememberSaveable(companyId) { mutableStateOf(startFabric) }
+    val fabric = vm.fabricFor(companyId)
+    val fabricId = fabric?.id
+    /* the Fabric Stock company on show is read with its people and devices, and again after every change */
+    DisposableEffect(fabricTab, fabricId) {
+        vm.fabricOpen = if (fabricTab) fabricId else null
+        onDispose { if (vm.fabricOpen == fabricId) vm.fabricOpen = null }
+    }
+    LaunchedEffect(fabricTab, fabricId) {
+        if (!fabricTab) return@LaunchedEffect
+        if (fabricId != null) vm.loadFabricDetail(fabricId)
+        else if (vm.productsLoad == Load.IDLE) vm.loadProducts()
+    }
 
     if (company == null) {
         /* Deleted while it was open, or the list has been reloaded without it. */
@@ -63,10 +85,23 @@ fun CompanyScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item { Column(page) { IdentityCard(company, vm) } }   /* a banner and a card, one under the other */
-        item { Box(page) { FactsCard(company) } }
-        item { Box(page) { PeopleCard(company, vm, onAsk) } }
-        item { Box(page) { ActionsCard(company, vm, nav, onAsk) } }
+        item(key = "software") {
+            Box(page) { SoftwareSwitch(fabricTab, company.stateText(), fabricSwitchLine(vm, fabric)) { fabricTab = it } }
+        }
+        if (!fabricTab) {
+            item { Column(page) { IdentityCard(company, vm) } }   /* a banner and a card, one under the other */
+            item { Box(page) { FactsCard(company) } }
+            item { Box(page) { PeopleCard(company, vm, onAsk) } }
+            item { Box(page) { ActionsCard(company, vm, nav, onAsk) } }
+        } else {
+            val problem = vm.fabricProblem
+            when {
+                fabric != null -> fabricItems(vm, nav, fabric, company, page, onAsk, openWeight = false)
+                problem != null -> item { Box(page) { FabricNotConnectedCard(vm, problem) } }
+                !vm.fabricReady -> item { Box(page) { FabricReadingCard() } }
+                else -> item { Box(page) { NotUsingFabricCard(company, vm, onAsk) } }
+            }
+        }
     }
 }
 
