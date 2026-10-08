@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.core.app.ApplicationProvider
 import org.json.JSONArray
 import org.json.JSONObject
@@ -93,6 +94,12 @@ class DeletedScreens4720Test {
         rule.waitForIdle()
     }
 
+    /* 2.0.0 — a tab of the customer's window, pressed by its click action: past the edge of the tab row a touch cannot reach it */
+    private fun tapTab(text: String) {
+        rule.onAllNodesWithText(text)[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+        rule.waitForIdle()
+    }
+
     private fun waitFor(what: String, ok: () -> Boolean) {
         val end = System.currentTimeMillis() + 15_000
         while (true) {
@@ -104,25 +111,29 @@ class DeletedScreens4720Test {
         }
     }
 
-    private val whyDelete = "delete stops it now and keeps it 30 days (Restore under Companies → Deleted); " +
+    private val whyDelete = "delete stops it now and keeps it 30 days (Restore under Customers → Deleted); " +
         "then it and everything that belongs to it are erased"
 
+    /* 2.0.0 — Delete lives on the customer window's More tab (Sales & Costing), as on the web console */
     @Test
     fun theCompanySaysWhatDeleteNowDoes() {
         screen("http://127.0.0.1:9", listing(listOf(LIVE), emptyList()))
-        tap("Companies")
+        tap("Customers")
         tap("Shree Demo Sacks")
+        tapTab("More")
         rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Delete"))
         rule.onAllNodesWithText(whyDelete).assertCountEquals(1)
     }
 
+    /* 2.0.0 — the quick views (All, Renew in 30 days, …) are always there now; only Deleted needs a service that keeps them */
     @Test
     fun anOlderServiceIsNotPromisedARestore() {
         screen("http://127.0.0.1:9", listing(listOf(LIVE), null))
-        tap("Companies")
+        tap("Customers")
         rule.onAllNodesWithText("Deleted", substring = true).assertCountEquals(0)
-        rule.onAllNodesWithText("All 1").assertCountEquals(0)
+        rule.onAllNodesWithText("All 1").assertCountEquals(1)
         tap("Shree Demo Sacks")
+        tapTab("More")
         rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Delete"))
         rule.onAllNodesWithText(whyDelete).assertCountEquals(0)
     }
@@ -130,7 +141,7 @@ class DeletedScreens4720Test {
     @Test
     fun anEmptyDeletedListSaysHowItWorks() {
         screen("http://127.0.0.1:9", listing(listOf(LIVE), emptyList()))
-        tap("Companies")
+        tap("Customers")
         tap("Deleted 0")
         rule.onAllNodesWithText(
             "No deleted companies. A company you delete is kept here for ${DeletedCompany.KEEP_DAYS} days and can be " +
@@ -161,7 +172,7 @@ class DeletedScreens4720Test {
         }.also { server = it }
         val vm = screen(srv.base, listing(listOf(LIVE), listOf(GONE)))
 
-        tap("Companies")
+        tap("Customers")
         rule.onAllNodesWithText("All 1").assertCountEquals(1)
         rule.onAllNodesWithText("Om Poly Packs").assertCountEquals(0)
 

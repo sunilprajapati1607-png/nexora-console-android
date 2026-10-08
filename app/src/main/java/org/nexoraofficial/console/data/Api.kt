@@ -193,6 +193,31 @@ class Api(
     suspend fun fabricDetail(id: Int): FabricDetail =
         FabricDetail.from(fabric(JSONObject().put("action", "detail").put("id", id)))
 
+    /* ---------- 2.0.0: plans per software, and the payments ledger ---------- */
+
+    /**
+     * Every software's plans and features. Read when the console is open — never by the quarter-hourly
+     * watch (audit 43). Fabric Stock's block is asked of its own service, so this may take a while.
+     */
+    suspend fun plans(): PlansData = withContext(Dispatchers.IO) {
+        PlansData.from(checked("GET", "/admin/api/plans", null))
+    }
+
+    /** create | update | retire | restore | delete a plan; a refusal is thrown in the service's own words (501 NOT_YET for Fabric Stock). */
+    suspend fun planAction(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        checked("POST", "/admin/api/plans", body)
+    }
+
+    /** The payments, newest first, with their totals. Read when the console is open — never in the background. */
+    suspend fun payments(): PaymentsData = withContext(Dispatchers.IO) {
+        PaymentsData.from(checked("GET", "/admin/api/payments", null))
+    }
+
+    /** add | update | delete a payment (the service says which console recorded it, from x-console). */
+    suspend fun paymentAction(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        checked("POST", "/admin/api/payments", body)
+    }
+
     /* 200 is done; any other answer is a failure carrying {error, message} — 502 FABRIC_DOWN or
        FABRIC_KEY when Fabric Stock is asleep or refuses the key — told in the message's words.
        Read for longer than the rest, for Fabric Stock waking. */

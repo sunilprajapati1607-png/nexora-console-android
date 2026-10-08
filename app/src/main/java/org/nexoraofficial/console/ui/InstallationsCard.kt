@@ -87,7 +87,7 @@ fun InstallationsCard(vm: ConsoleViewModel, onAsk: (Ask) -> Unit) {
 }
 
 @Composable
-private fun InstallationRow(l: Licence, vm: ConsoleViewModel, onAsk: (Ask) -> Unit) {
+internal fun InstallationRow(l: Licence, vm: ConsoleViewModel, onAsk: (Ask) -> Unit) {
     val c = LocalNexora.current
     val state = l.shownState
 

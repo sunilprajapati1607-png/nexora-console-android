@@ -102,6 +102,17 @@ sealed interface Ask {
         /** [id] goes back to [onPick]; [line] is what tells two of the same name apart. */
         data class Option(val id: Int, val title: String, val line: String)
     }
+
+    /**
+     * 2.0.0 — a day, from the phone's own calendar ("paid on", "valid to"). [initial] and the answer are
+     * "YYYY-MM-DD"; [clearable] offers to leave it empty (the answer is then "").
+     */
+    data class Date(
+        val title: String,
+        val initial: String,
+        val clearable: Boolean = false,
+        val onPick: (String) -> Unit
+    ) : Ask
 }
 
 /**
@@ -134,6 +145,7 @@ private fun DialogShell(
     )
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun AskHost(ask: Ask?, onClose: () -> Unit) {
     when (ask) {
@@ -322,6 +334,36 @@ fun AskHost(ask: Ask?, onClose: () -> Unit) {
                             if (o.line.isNotBlank()) Small(o.line)
                         }
                     }
+            }
+        }
+
+        is Ask.Date -> {
+            val start = remember(ask) {
+                runCatching { java.time.LocalDate.parse(ask.initial) }.getOrNull() ?: java.time.LocalDate.now()
+            }
+            val state = androidx.compose.material3.rememberDatePickerState(
+                initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+            )
+            androidx.compose.material3.DatePickerDialog(
+                onDismissRequest = onClose,
+                confirmButton = {
+                    ConsoleButton("OK", {
+                        state.selectedDateMillis?.let { ms ->
+                            ask.onPick(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString())
+                        }
+                        onClose()
+                    }, kind = ButtonKind.Primary)
+                },
+                dismissButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (ask.clearable) ConsoleButton("Clear", { ask.onPick(""); onClose() })
+                        ConsoleButton("Cancel", onClose)
+                    }
+                }
+            ) {
+                androidx.compose.material3.DatePicker(state = state, title = {
+                    Text(ask.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 24.dp, top = 16.dp))
+                })
             }
         }
 

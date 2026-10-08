@@ -166,7 +166,7 @@ class Deleted4720Test {
     fun theDeleteQuestionSaysItIsKeptThirtyDays() {
         assertEquals(
             "Its computers and phones stop at their next check and nobody can sign in. It is kept for 30 days: " +
-                "Restore (Companies → Deleted) puts it back exactly as it was. After 30 days the company, its " +
+                "Restore (Customers → Deleted) puts it back exactly as it was. After 30 days the company, its " +
                 "machines, its people, everything they synced, its chat and its problem reports are erased for good.",
             deleteQuestionBody(keepsDeleted = true)
         )
@@ -221,7 +221,7 @@ class Deleted4720Test {
         until("answered") { heard.after("company:delete", "licences") && vm.msg != null }
 
         assertEquals(
-            "Shree Demo Sacks is deleted and kept for 30 days: Restore (Companies → Deleted) puts it back exactly " +
+            "Shree Demo Sacks is deleted and kept for 30 days: Restore (Customers → Deleted) puts it back exactly " +
                 "as it was until " + Fmt.day("2026-11-01T05:40:00.000Z") + ". After that it is erased for good. " +
                 "(1 installation(s), 0 user(s), 0 synced record(s), 0 ink model(s) are kept until then.)",
             msgOf(vm).text

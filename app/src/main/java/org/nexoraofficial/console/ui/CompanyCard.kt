@@ -1,31 +1,17 @@
 package org.nexoraofficial.console.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import org.nexoraofficial.console.Load
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import org.nexoraofficial.console.ConsoleViewModel
 import org.nexoraofficial.console.Msg
@@ -35,279 +21,69 @@ import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.data.Person
 import org.nexoraofficial.console.ui.theme.LocalNexora
 
-/**
- * ONE CUSTOMER, AS A SCREEN OF ITS OWN.
- *
- * The web console opens a panel inside a long page. A phone opens a screen:
- * the facts at the top, then the people, then everything that can be done to
- * them grouped the way somebody actually thinks about it — the licence, the
- * machines, the people, GST, usage, and stopping them.
- */
+/* ======================================================================
+   SALES & COSTING, INSIDE A CUSTOMER'S WINDOW.
+
+   2.0.0 — what the company screen held, laid out as the window's tabs
+   (CustomerWindow.kt): the people (who may sign in, their PINs, their
+   addresses), the sign-in set up by Nexora (administrator, company
+   passcode), and More — GST, usage, and stopping or deleting the company.
+   The licence itself (plan, days, seats, limits) is the Licence tab, and
+   is changed with Edit.
+   ====================================================================== */
+
+/** People tab, top: what Nexora sets up for the company's sign-in — the rest is its administrator's. */
 @Composable
-fun CompanyScreen(
-    vm: ConsoleViewModel,
-    nav: Navigator,
-    companyId: Int,
-    gutter: PaddingValues,
-    page: Modifier,
-    startFabric: Boolean = false,
-    onAsk: (Ask) -> Unit
-) {
-    val company = vm.data.companies.find { it.id == companyId }
-
-    /* Opening the screen is what asks for the people. */
-    LaunchedEffect(companyId) { vm.loadPeople(companyId) }
-
-    /* 1.9.0 — which software is shown: Weight Calc (all the screen ever showed) or Fabric Stock */
-    var fabricTab by rememberSaveable(companyId) { mutableStateOf(startFabric) }
-    val fabric = vm.fabricFor(companyId)
-    val fabricId = fabric?.id
-    /* the Fabric Stock company on show is read with its people and devices, and again after every change */
-    DisposableEffect(fabricTab, fabricId) {
-        vm.fabricOpen = if (fabricTab) fabricId else null
-        onDispose { if (vm.fabricOpen == fabricId) vm.fabricOpen = null }
-    }
-    LaunchedEffect(fabricTab, fabricId) {
-        if (!fabricTab) return@LaunchedEffect
-        if (fabricId != null) vm.loadFabricDetail(fabricId)
-        else if (vm.productsLoad == Load.IDLE) vm.loadProducts()
-    }
-
-    if (company == null) {
-        /* Deleted while it was open, or the list has been reloaded without it. */
-        LaunchedEffect(Unit) { nav.backToRoot() }
-        return
-    }
-
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = gutter,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(key = "software") {
-            Box(page) { SoftwareSwitch(fabricTab, company.stateText(), fabricSwitchLine(vm, fabric)) { fabricTab = it } }
-        }
-        if (!fabricTab) {
-            item { Column(page) { IdentityCard(company, vm) } }   /* a banner and a card, one under the other */
-            item { Box(page) { FactsCard(company) } }
-            item { Box(page) { PeopleCard(company, vm, onAsk) } }
-            item { Box(page) { ActionsCard(company, vm, nav, onAsk) } }
-        } else {
-            val problem = vm.fabricProblem
-            when {
-                fabric != null -> fabricItems(vm, nav, fabric, company, page, onAsk, openWeight = false)
-                problem != null -> item { Box(page) { FabricNotConnectedCard(vm, problem) } }
-                !vm.fabricReady -> item { Box(page) { FabricReadingCard() } }
-                else -> item { Box(page) { NotUsingFabricCard(company, vm, onAsk) } }
-            }
-        }
-    }
-}
-
-/* ---- who they are ---- */
-
-@Composable
-private fun IdentityCard(company: Company, vm: ConsoleViewModel) {
-
-    val clipboard = LocalClipboardManager.current
-    val state = company.shownState
-
-    /* 1.6.0 — the company's head on the logo's sweep, as Nexora Mobile heads a record */
-    GradientBanner(Modifier.appear(0)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(company.name, style = MaterialTheme.typography.headlineSmall, color = androidx.compose.ui.graphics.Color.White,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.CircleShape, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.2f)) {
-                Text((if (state == "DEMO") "demo" else state.lowercase()).proper(), color = androidx.compose.ui.graphics.Color.White,
-                    style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(company.plan + " plan · " + (if (state == "EXPIRED" || state == "SUSPENDED") "ended " + Fmt.day(company.expiresAt)
-            else if (company.daysLeft == 0) "ends today" else "${company.daysLeft} days left"),
-            style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f))
-        Text("${company.seatsUsed} of ${company.seats} seats · ${company.machinesUsed} computers · Nexora AI ${company.aiUsedToday} today",
-            style = MaterialTheme.typography.labelMedium, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f))
-    }
-    Spacer(Modifier.height(12.dp))
+internal fun WeightSignInCard(company: Company, vm: ConsoleViewModel, onAsk: (Ask) -> Unit) {
+    val id = company.id
     ConsoleCard {
-        /* 4.72.0 — audit #90: said where the renewal is done, as well as on the dashboard */
-        if (company.endingSoon) {
-            MessageStrip(
-                Msg(
-                    "The licence ${company.endsText} (${Fmt.day(company.expiresAt)}). " +
-                        "After that it opens read-only — call them to renew.",
-                    Msg.Kind.WARN
-                ),
-                onDismiss = {}
-            )
-            Spacer(Modifier.height(12.dp))
-        }
+        CardHeading("Sign-In", "the administrator adds everyone else and gives their rights inside Sales & Costing")
         WrapRow {
-            if (company.selfRegistered) Pill("self-registered", "SELF")
-            if (company.gstin != null) {
-                val g = company.gstStatus ?: "UNVERIFIED"
-                Pill(
-                    when (g) {
-                        "VERIFIED" -> "GST verified"
-                        "FAILED" -> "GST failed"
-                        else -> "GST not yet verified"
-                    },
-                    if (g == "VERIFIED") "LICENSED" else g
+            ConsoleButton("Set administrator…", {
+                onAsk(
+                    Ask.TwoInputs(
+                        title = "Administrator for ${company.name}",
+                        body = "Name the person who will manage users and see every calculation. " +
+                            "If a user of that name exists, they become the administrator and get " +
+                            "the new PIN.",
+                        labelA = "Name",
+                        initialA = "Administrator",
+                        labelB = "PIN (at least 4 characters)",
+                        validate = { n, p ->
+                            when {
+                                n.isBlank() -> "A name is required."
+                                p.length < 4 -> "A PIN of at least 4 characters is required."
+                                else -> null
+                            }
+                        },
+                        onOk = { n, p -> vm.setAdministrator(id, n, p) }
+                    )
                 )
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Fact("Licence key", Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Mono(
-                    company.licenceKey,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    size = 14f,
-                    modifier = Modifier.weight(1f)
+            }, small = true)
+            ConsoleButton("New company passcode…", {
+                onAsk(
+                    Ask.TwoInputs(
+                        title = "New company passcode for ${company.name}",
+                        body = "The login id is the first half of their login. Nobody can read the " +
+                            "old passcode — it is stored scrambled. Tell them the new one directly.",
+                        labelA = "Company login id",
+                        initialA = company.loginId ?: "",
+                        labelB = "New passcode (at least 6 characters)",
+                        validate = { _, p ->
+                            if (p.length < 6) "A passcode of at least 6 characters is required." else null
+                        },
+                        onOk = { l, p -> vm.setPasscode(id, l.trim(), p) }
+                    )
                 )
-                ConsoleButton("Copy", {
-                    clipboard.setText(AnnotatedString(company.licenceKey))
-                    vm.say("Copied ${company.licenceKey}", Msg.Kind.OK)
-                }, small = true)
-            }
-        }
-
-        val lines = buildList {
-            company.gstin?.let { add("GSTIN" to it) }
-            company.email?.let { add("Email" to it) }
-            company.phone?.let { add("Mobile" to it) }
-            company.loginId?.let { add("Login id" to it) }
-            company.registeredIp?.let { add("Registered from" to it) }
-            company.registeredAt?.let { add("Registered on" to Fmt.day(it)) }
-        }
-        if (lines.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            lines.forEach { (label, value) ->
-                Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Small(label, modifier = Modifier.width(120.dp))
-                    Mono(value, color = MaterialTheme.colorScheme.onSurface)
-                }
-            }
+            }, small = true)
         }
     }
-}
-
-/* ---- what the figures say ---- */
-
-@Composable
-private fun FactsCard(company: Company) {
-
-    val state = company.shownState
-
-    ConsoleCard {
-        Text("Where They Stand", style = CardTitleStyle)
-        Spacer(Modifier.height(12.dp))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            /* A seat is a PERSON; machines are counted but not rationed. */
-            Fact("Seats (people)", Modifier.weight(1f)) {
-                FactValue("${company.seatsUsed} of ${company.seats}")
-                val left = company.seats - company.seatsUsed
-                Small(if (left > 0) "$left available" else "none available")
-                Spacer(Modifier.height(6.dp))
-                Bar(
-                    company.seatsUsed / company.seats.coerceAtLeast(1).toFloat(),
-                    full = company.seatsUsed >= company.seats
-                )
-            }
-            Fact("Computers", Modifier.weight(1f)) {
-                FactValue(company.machinesUsed.toString())
-                Small("not counted against seats")
-            }
-        }
-
-        /* 4.57.0 - WHEN IT STARTED, beside when it ends.
-
-             "licence ke demo kai date thi start thayo ane kyare patese"
-
-           The card gave a days-left count and the date it ends, and said
-           nothing about the other end of the clock - so a number had no
-           scale to be read against. */
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Fact(if (company.isDemo) "Demo started" else "Licence started", Modifier.weight(1f)) {
-                FactValue(Fmt.day(company.periodStartedAt))
-                if (company.periodDays > 0) {
-                    Small("${company.periodDays}-day " + (if (company.isDemo) "demo" else "licence"))
-                }
-            }
-            Fact(
-                when (state) {
-                    "EXPIRED" -> "Ended"
-                    "SUSPENDED" -> "Suspended · ends"
-                    else -> "Days left"
-                },
-                Modifier.weight(1f)
-            ) {
-                if (state == "EXPIRED" || state == "SUSPENDED") {
-                    FactValue(Fmt.day(company.expiresAt))
-                } else {
-                    /* 4.72.0 — audit #90: the service's "ending within 30 days", marked as the web console marks it */
-                    val warn = if (company.renewSoon) LocalNexora.current.warn else null
-                    FactValue(if (company.daysLeft == 0) "today" else company.daysLeft.toString(), color = warn)
-                    Small(Fmt.day(company.expiresAt) + (if (company.renewSoon) " · renew soon" else ""), color = warn)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Fact("Offline allowed", Modifier.weight(1f)) {
-                FactValue(if (company.graceDays > 0) "${company.graceDays} days" else "none")
-                if (company.graceDays == 0) Small("stops when it cannot reach the service")
-            }
-            Fact("Hours in use", Modifier.weight(1f)) {
-                FactValue(Fmt.hours(company.usageMinutes))
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Fact("Transactions", Modifier.weight(1f)) {
-                TransactionsFigure(company.txnUsed, company.txnLimit)
-            }
-            /* 1.6.0 — Nexora AI asked today, and the day's limit */
-            Fact("Nexora AI Today", Modifier.weight(1f)) {
-                FactValue(company.aiUsedToday.toString())
-                Small(if (company.aiDailyLimit > 0) "of ${company.aiDailyLimit} a day" else "the service's own limit")
-            }
-        }
-    }
-}
-
-@Composable
-private fun TransactionsFigure(used: Int, limit: Int) {
-    val c = LocalNexora.current
-    if (limit <= 0) {
-        FactValue(used.toString())
-        Small("no limit")
-        return
-    }
-    val pct = (used / limit.toFloat()).coerceIn(0f, 1f)
-    val colour = when {
-        used >= limit -> c.bad
-        used >= limit * 0.9 -> c.warn
-        else -> MaterialTheme.colorScheme.primary
-    }
-    FactValue(used.toString())
-    Small("of $limit")
-    Spacer(Modifier.height(6.dp))
-    Bar(pct, full = used >= limit, color = colour)
-    if (used >= limit) Small("limit reached — read-only", color = c.bad)
 }
 
 /* ---- who may sign in ---- */
 
 @Composable
-private fun PeopleCard(company: Company, vm: ConsoleViewModel, onAsk: (Ask) -> Unit) {
+internal fun PeopleCard(company: Company, vm: ConsoleViewModel, onAsk: (Ask) -> Unit) {
 
     val people = vm.people
 
@@ -497,10 +273,20 @@ private fun PersonRow(company: Company, u: Person, vm: ConsoleViewModel, onAsk: 
     }
 }
 
-/* ---- everything the owner may do ---- */
+/* ---- More: GST, usage, and stopping them ---- */
+
+/** The Suspend question, the same from the tool strip and from More. */
+internal fun suspendQuestion(vm: ConsoleViewModel, id: Int) = Ask.Confirm(
+    title = "Suspend this company?",
+    body = "EVERY machine on this licence stops calculating at its next " +
+        "check. Nothing is deleted; Restore puts it back.",
+    confirmText = "Suspend",
+    danger = true,
+    onYes = { vm.act(id, "suspend") }
+)
 
 @Composable
-private fun ActionsCard(
+internal fun WeightMoreCard(
     company: Company,
     vm: ConsoleViewModel,
     nav: Navigator,
@@ -509,171 +295,9 @@ private fun ActionsCard(
     val id = company.id
 
     ConsoleCard {
-        Text("What You Can Do", style = CardTitleStyle)
-
-        Spacer(Modifier.height(14.dp))
-        GroupHeading("Their details")
-        WrapRow {
-            ConsoleButton("Rename", {
-                onAsk(
-                    Ask.Input(
-                        title = "Rename this company",
-                        body = "What the customer is called everywhere — here, on their machines, " +
-                            "and on anything printed.",
-                        label = "Company name",
-                        initial = company.name,
-                        validate = { if (it.isBlank()) "A name is required." else null },
-                        onOk = { name -> vm.renameCompany(id, name) }
-                    )
-                )
-            }, small = true)
-            ConsoleButton(if (company.gstin == null) "Add GSTIN" else "Change GSTIN", {
-                onAsk(
-                    Ask.Input(
-                        title = "GSTIN for ${company.name}",
-                        body = "Fifteen characters. Leave it blank to take it off.",
-                        label = "GSTIN",
-                        initial = company.gstin.orEmpty(),
-                        onOk = { g -> vm.setGstin(id, g) }
-                    )
-                )
-            }, small = true)
-            ConsoleButton("Note", {
-                onAsk(
-                    Ask.Input(
-                        title = "A note about ${company.name}",
-                        body = "For you, not for them. Anything worth remembering next time they ring.",
-                        label = "Note",
-                        initial = "",
-                        onOk = { n -> vm.setNote(id, n) }
-                    )
-                )
-            }, small = true)
-        }
-
-        Spacer(Modifier.height(16.dp))
-        GroupHeading("Licence")
-        WrapRow {
-            if (company.isDemo) {
-                ConsoleButton(
-                    "Make licensed for a year",
-                    { vm.act(id, "licence", 365) },
-                    kind = ButtonKind.Primary,
-                    small = true
-                )
-            }
-            ConsoleButton("Add days", {
-                onAsk(
-                    Ask.Input(
-                        title = "Add how many days to this licence?",
-                        body = "The company's clock moves; every seat follows.",
-                        label = "Days",
-                        initial = "30",
-                        numeric = true,
-                        confirmText = "Add",
-                        validate = { if ((it.toIntOrNull() ?: 0) > 0) null else "Enter a number of days." },
-                        onOk = { v -> vm.act(id, "extend", v.toInt()) }
-                    )
-                )
-            }, small = true)
-            ConsoleButton("+1 year", { vm.act(id, "extend", 365) }, small = true)
-            /* 1.5.0 — the plan; seats are set separately */
-            val onStd = company.plan == "STANDARD"
-            ConsoleButton(
-                if (onStd) "Plan: Standard" else "Plan: Pro",
-                {
-                    onAsk(
-                        Ask.Confirm(
-                            title = if (onStd) "Change to Pro?" else "Change to Standard?",
-                            body = if (onStd) "Pro carries everything ticked under Plans." else "Standard is calculation and costing; the rest goes at the next check. Seats are not affected.",
-                            confirmText = "Change"
-                        ) { vm.setPlan(id, if (onStd) "PRO" else "STANDARD") }
-                    )
-                },
-                small = true
-            )
-        }
-        if (company.isDemo) Why("turns this demo into a paying customer — a demo has every feature whatever its plan")
-
-        Spacer(Modifier.height(16.dp))
-        GroupHeading("Machines and seats")
-        WrapRow {
-            ConsoleButton("Seats", {
-                onAsk(
-                    Ask.Input(
-                        title = "How many people may sign in on this licence?",
-                        body = "A seat is a person. Computers are not rationed.",
-                        label = "Seats",
-                        initial = company.seats.toString(),
-                        numeric = true,
-                        validate = { if ((it.toIntOrNull() ?: 0) > 0) null else "Enter a number of seats." },
-                        onOk = { v -> vm.setSeats(id, v.toInt()) }
-                    )
-                )
-            }, small = true)
-            ConsoleButton("Offline days", {
-                onAsk(
-                    Ask.Input(
-                        title = "How many days may this customer work with no contact?",
-                        body = "0 = none: it stops as soon as it cannot reach the service.",
-                        label = "Offline days",
-                        initial = company.graceDays.toString(),
-                        numeric = true,
-                        validate = { if (it.toIntOrNull() != null) null else "Enter a number of days." },
-                        onOk = { v -> vm.setGrace(id, v.toInt()) }
-                    )
-                )
-            }, small = true)
-            ConsoleButton("Show its machines", {
-                vm.companyFilter = id
-                nav.switchTo(Screen.Machines)
-            }, small = true)
-        }
-
-        Spacer(Modifier.height(16.dp))
-        GroupHeading("Sign-in")
-        WrapRow {
-            ConsoleButton("Set administrator", {
-                onAsk(
-                    Ask.TwoInputs(
-                        title = "Administrator for ${company.name}",
-                        body = "Name the person who will manage users and see every calculation. " +
-                            "If a user of that name exists, they become the administrator and get " +
-                            "the new PIN.",
-                        labelA = "Name",
-                        initialA = "Administrator",
-                        labelB = "PIN (at least 4 characters)",
-                        validate = { n, p ->
-                            when {
-                                n.isBlank() -> "A name is required."
-                                p.length < 4 -> "A PIN of at least 4 characters is required."
-                                else -> null
-                            }
-                        },
-                        onOk = { n, p -> vm.setAdministrator(id, n, p) }
-                    )
-                )
-            }, small = true)
-            ConsoleButton("New company passcode", {
-                onAsk(
-                    Ask.TwoInputs(
-                        title = "New company passcode for ${company.name}",
-                        body = "The login id is the first half of their login. Nobody can read the " +
-                            "old passcode — it is stored scrambled. Tell them the new one directly.",
-                        labelA = "Company login id",
-                        initialA = company.loginId ?: "",
-                        labelB = "New passcode (at least 6 characters)",
-                        validate = { _, p ->
-                            if (p.length < 6) "A passcode of at least 6 characters is required." else null
-                        },
-                        onOk = { l, p -> vm.setPasscode(id, l.trim(), p) }
-                    )
-                )
-            }, small = true)
-        }
+        CardHeading("More", "on Sales & Costing only — Fabric Stock's licence is not touched")
 
         if (company.gstin != null) {
-            Spacer(Modifier.height(16.dp))
             GroupHeading("GST")
             WrapRow {
                 ConsoleButton("Verify online", { vm.gstVerify(id) }, small = true)
@@ -699,39 +323,11 @@ private fun ActionsCard(
             }
             company.gstCheckedAt?.let { Why("last checked ${Fmt.dateTime(it)}") }
             company.gstNote?.let { Why(it) }
+            Spacer(Modifier.height(16.dp))
         }
 
-        Spacer(Modifier.height(16.dp))
         GroupHeading("Usage")
         WrapRow {
-            ConsoleButton("Nexora AI a day", {
-                onAsk(
-                    Ask.Input(
-                        title = "How many Nexora AI questions may this company ask a day?",
-                        body = "On Nexora's Google key. 0 = the service's own number. A company with its own " +
-                            "Gemini key is limited by Google, not by this.",
-                        label = "Questions a day",
-                        initial = company.aiDailyLimit.toString(),
-                        numeric = true,
-                        validate = { if ((it.toIntOrNull() ?: -1) >= 0) null else "Enter a number (0 or more)." },
-                        onOk = { v -> vm.setAiLimit(id, v.toInt()) }
-                    )
-                )
-            }, small = true)
-            ConsoleButton("Transaction limit", {
-                onAsk(
-                    Ask.Input(
-                        title = "How many transactions may this licence commit?",
-                        body = "0 = no limit. Reaching the limit makes the machines READ-ONLY: " +
-                            "everything saved still opens and prints.",
-                        label = "Transaction limit",
-                        initial = company.txnLimit.toString(),
-                        numeric = true,
-                        validate = { if (it.toIntOrNull() != null) null else "Enter a number." },
-                        onOk = { v -> vm.setTxnLimit(id, v.toInt()) }
-                    )
-                )
-            }, small = true)
             ConsoleButton("Reset usage", {
                 onAsk(
                     Ask.Confirm(
@@ -744,6 +340,7 @@ private fun ActionsCard(
                 )
             }, small = true)
         }
+        Why("count and hours from zero; nothing saved is touched")
 
         Spacer(Modifier.height(16.dp))
         GroupHeading("Stop them")
@@ -756,18 +353,7 @@ private fun ActionsCard(
                     small = true
                 )
             } else {
-                ConsoleButton("Suspend", {
-                    onAsk(
-                        Ask.Confirm(
-                            title = "Suspend this company?",
-                            body = "EVERY machine on this licence stops calculating at its next " +
-                                "check. Nothing is deleted; Restore puts it back.",
-                            confirmText = "Suspend",
-                            danger = true,
-                            onYes = { vm.act(id, "suspend") }
-                        )
-                    )
-                }, kind = ButtonKind.Danger, small = true)
+                ConsoleButton("Suspend", { onAsk(suspendQuestion(vm, id)) }, kind = ButtonKind.Danger, small = true)
             }
             ConsoleButton("Delete", {
                 onAsk(
@@ -791,9 +377,10 @@ private fun ActionsCard(
             else "every machine stops at its next check; nothing is deleted"
         )
         if (vm.data.keepsDeleted) {
+            Spacer(Modifier.height(4.dp))
             Why(
                 "delete stops it now and keeps it ${DeletedCompany.KEEP_DAYS} days (Restore under " +
-                    "Companies → Deleted); then it and everything that belongs to it are erased"
+                    "Customers → Deleted); then it and everything that belongs to it are erased"
             )
         }
     }
@@ -807,7 +394,7 @@ private fun ActionsCard(
 internal fun deleteQuestionBody(keepsDeleted: Boolean): String =
     if (keepsDeleted)
         "Its computers and phones stop at their next check and nobody can sign in. It is kept for " +
-            "${DeletedCompany.KEEP_DAYS} days: Restore (Companies → Deleted) puts it back exactly as it was. " +
+            "${DeletedCompany.KEEP_DAYS} days: Restore (Customers → Deleted) puts it back exactly as it was. " +
             "After ${DeletedCompany.KEEP_DAYS} days the company, its machines, its people, everything they " +
             "synced, its chat and its problem reports are erased for good."
     else "This removes the company, its machines, its people and everything they synced. " +

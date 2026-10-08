@@ -70,8 +70,22 @@ data class Company(
        ended yet. Marked "renew soon" in the list and on the company, as the
        web console marks it; false from a service that does not send it. The
        dashboard's warning stays at ENDING_DAYS (endingSoon, below). */
-    val renewSoon: Boolean = false
+    val renewSoon: Boolean = false,
+    /* 2.0.0 — the owner's note, when the company was made, and this company's own changes over its plan
+       ("+ added" true / "− off" false; a feature not named follows the plan). Empty from an older service. */
+    val notes: String? = null,
+    val createdAt: String? = null,
+    val featureOverrides: Map<String, Boolean> = emptyMap()
 ) {
+    /** 2.0.0 — the web console's reading (wState): suspended, ended, on a demo, or licensed. */
+    val swState: String
+        get() = when {
+            state == "SUSPENDED" -> "SUSPENDED"
+            expired -> "EXPIRED"
+            isDemo -> "DEMO"
+            else -> "LICENSED"
+        }
+
     /** The same reading the console shows on the pill. */
     val shownState: String
         get() = if (expired && state != "SUSPENDED") "EXPIRED" else state
@@ -139,9 +153,24 @@ data class Company(
             usersTotal = o.int("users_total"),
             adminNames = o.str("admin_names"),
             userEmails = o.str("user_emails"),
-            plan = o.str("plan") ?: "PRO",
-            renewSoon = o.bool("ending_soon")
+            plan = o.str("plan")?.uppercase() ?: "PRO",
+            renewSoon = o.bool("ending_soon"),
+            notes = o.str("notes"),
+            createdAt = o.str("created_at"),
+            featureOverrides = overridesOf(o.opt("feature_overrides"))
         )
+
+        /** {featureId: true|false} however the service kept it (an object, or that object as text); anything else is none. */
+        internal fun overridesOf(v: Any?): Map<String, Boolean> {
+            val o: JSONObject = when (v) {
+                is JSONObject -> v
+                is String -> runCatching { JSONObject(v) }.getOrNull() ?: return emptyMap()
+                else -> return emptyMap()
+            }
+            val out = LinkedHashMap<String, Boolean>()
+            o.keys().forEach { k -> (o.opt(k) as? Boolean)?.let { out[k] = it } }
+            return out
+        }
     }
 }
 
@@ -303,7 +332,9 @@ data class Licence(
 
 /* ---- the plans (1.5.0) ---------------------------------------------- */
 
-/** One feature a plan may carry. The ids are the application's own. */
+/** One feature a plan may carry. The ids are the application's own.
+ *  2.0.0 — this list is what the console falls back on when the service gives no plans
+ *  (GET /admin/api/plans, an older service); the service's own list is what is shown otherwise. */
 data class PlanFeature(val id: String, val label: String)
 
 /** The catalogue, in the order the web console lists it. */
@@ -312,17 +343,17 @@ val PLAN_FEATURES: List<PlanFeature> = listOf(
     PlanFeature("chat", "Company conversation (chat)"),
     PlanFeature("notes", "Notes pad"),
     PlanFeature("bomWorkflow", "BOM workflow automation"),
-    PlanFeature("onlinePrices", "Prices from the producer's list"),
+    PlanFeature("onlinePrices", "Prices from the producer’s list"),
     PlanFeature("bagView", "3D bag view"),
     PlanFeature("ink", "Ink assumption"),
     PlanFeature("sharing", "Email & WhatsApp sharing"),
     PlanFeature("exportExcel", "Export to Excel"),
     PlanFeature("exportPdf", "Export to PDF"),
-    PlanFeature("priceHistory", "RM price history"),
+    PlanFeature("priceHistory", "RM price history (price versions)"),
     PlanFeature("activityLog", "Activity log"),
     PlanFeature("backup", "Backup & restore"),
     PlanFeature("numberSeries", "Document number series"),
-    PlanFeature("tableSettings", "Table Settings"),
+    PlanFeature("tableSettings", "Table Settings (own column names)"),
     /* 4.51.0 — the BOM fills a section nobody has saved from what this
        plant itself usually does on that process. Sold per plan like the
        rest; with it off a plant works the old way and presses Suggest.
@@ -762,8 +793,10 @@ data class ConsoleData(
 /* ---- the console's own formatters ---- */
 object Fmt {
 
-    /** fmt() — "19 Sep 26", or a dash when there is no date at all. */
+    /** fmt() — "19 Sep 26", or a dash when there is no date at all.
+     *  2.0.0 — a plain date ("2026-10-08", as a payment's paid-on) is that day, never moved by a time zone. */
     fun day(iso: String?): String {
+        plainDate(iso)?.let { return DateTimeFormatter.ofPattern("dd MMM yy", Locale.getDefault()).format(it) }
         val i = instant(iso) ?: return "-"
         return DateTimeFormatter.ofPattern("dd MMM yy", Locale.getDefault())
             .format(i.atZone(ZoneId.systemDefault()))
@@ -796,6 +829,12 @@ object Fmt {
         val m = if (mins < 0) 0 else mins
         val h = m / 60
         return if (h > 0) "$h h ${m % 60} m" else "${m % 60} m"
+    }
+
+    /** "2026-10-08" as a date; null for anything else (a moment with a time is read by [day] as before). */
+    fun plainDate(iso: String?): java.time.LocalDate? {
+        if (iso == null || iso.length != 10) return null
+        return runCatching { java.time.LocalDate.parse(iso) }.getOrNull()
     }
 
     private fun instant(iso: String?): Instant? {

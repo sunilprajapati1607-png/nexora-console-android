@@ -14,7 +14,6 @@ import org.nexoraofficial.console.data.Api
 import org.nexoraofficial.console.data.ApiError
 import org.nexoraofficial.console.data.Audience
 import org.nexoraofficial.console.data.Broadcast
-import org.nexoraofficial.console.data.PLAN_FEATURES
 import org.nexoraofficial.console.data.Company
 import org.nexoraofficial.console.data.ConsoleData
 import org.nexoraofficial.console.data.DeletedCompany
@@ -45,8 +44,31 @@ import org.nexoraofficial.console.data.FabricDetail
 import org.nexoraofficial.console.data.ProductsData
 import org.nexoraofficial.console.data.SoftwareCounts
 import org.nexoraofficial.console.data.SoftwareFilter
+import org.nexoraofficial.console.data.CustQuick
+import org.nexoraofficial.console.data.Customer
+import org.nexoraofficial.console.data.Customers
+import org.nexoraofficial.console.data.FabricEdit
+import org.nexoraofficial.console.data.Money
+import org.nexoraofficial.console.data.NewCustomerForm
+import org.nexoraofficial.console.data.PayFilter
+import org.nexoraofficial.console.data.PayQuick
+import org.nexoraofficial.console.data.Payment
+import org.nexoraofficial.console.data.PaymentForm
+import org.nexoraofficial.console.data.PaymentsData
+import org.nexoraofficial.console.data.Plan
+import org.nexoraofficial.console.data.PlanForm
+import org.nexoraofficial.console.data.Plans
+import org.nexoraofficial.console.data.PlansData
+import org.nexoraofficial.console.data.Requests
+import org.nexoraofficial.console.data.Software
+import org.nexoraofficial.console.data.SwQuick
+import org.nexoraofficial.console.data.ValQuick
+import org.nexoraofficial.console.data.Validity
+import org.nexoraofficial.console.data.ValidityRow
+import org.nexoraofficial.console.data.WeightEdit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import java.time.LocalDate
 
 /** The console's own .msg strip: one line, three readings, gone in six seconds. */
 data class Msg(val text: String, val kind: Kind) {
@@ -66,8 +88,8 @@ enum class CompanyView { ALL, ENDING, DELETED }
  */
 enum class Load { IDLE, LOADING, READY, FAILED }
 
-/** 1.9.0 — which software a new company is made on. Both makes the Weight Calc one first, then Fabric Stock's linked to it. */
-enum class NewSoftware { WEIGHT, FABRIC, BOTH }
+/** 2.0.0 — one software's own list (By software): its quick view, its tab (customers, plans, payments) and its search. */
+data class SwView(val quick: SwQuick = SwQuick.ALL, val tab: String = "customers", val query: String = "")
 
 /** The editable copy of the service settings, while the owner is changing them. */
 data class SettingsForm(
@@ -121,19 +143,6 @@ data class InquiryForm(
     }
 }
 
-/** The New company form. */
-data class NewCompanyForm(
-    val name: String = "",
-    val seats: String = "1",
-    val days: String = "365",
-    val graceDays: String = "0",
-    val gstin: String = "",
-    val email: String = "",
-    /* 1.9.0 — on which software, and (Fabric Stock alone) whether it starts licensed or on a demo */
-    val software: NewSoftware = NewSoftware.WEIGHT,
-    val fabricState: String = "LICENSED"
-)
-
 class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = Prefs(app)
@@ -170,23 +179,23 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var companyFilter by mutableStateOf<Int?>(null)
     var showSettings by mutableStateOf(false)
-    var showNewCompany by mutableStateOf(false)
 
     var settingsForm by mutableStateOf(SettingsForm())
-    /* 1.5.0 — the plan matrix as it is being edited, and the messages sent to every room */
-    var planMatrix by mutableStateOf<Map<String, Map<String, Boolean>>>(emptyMap())
+    /* 1.5.0 — the messages sent to every room. (2.0.0 — the Standard / Pro matrix edited here is gone:
+       plans are made per software under Software & plans.) */
     var broadcasts by mutableStateOf<List<Broadcast>>(emptyList())
     var broadcastText by mutableStateOf("")
     var broadcastVersion by mutableStateOf("")
-    var newCompany by mutableStateOf(NewCompanyForm())
+    /* 2.0.0 — New customer: any software, each its own licence */
+    var newCustomer by mutableStateOf(NewCustomerForm())
 
     /* ---- the people on the open company ---- */
     var people by mutableStateOf<People?>(null)
-        private set
+        internal set   // 2.0.0 — internal so the screenshot suite can show made-up people
     var peopleBusy by mutableStateOf(false)
         private set
     var peopleError by mutableStateOf<String?>(null)
-        private set
+        internal set
 
     /* ---- the enquiries: leads, before they are customers ---- */
     /* 4.72.0 — internal (not private) so the tests can draw enquiries from made-up ones, as `data` */
@@ -349,6 +358,86 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     val softwareCounts: SoftwareCounts get() = CompanyList.counts(data.companies, fabricCompanies)
     val fabricCounts: FabricCounts get() = FabricCounts.of(fabricCompanies)
 
+    /* ---- 2.0.0: by customer, by software, the plans and the payments ----
+
+       "console ne software jevu banavanu che row type details click and open
+       window" (owner, 2026-10-08): lists of rows, a row opens its record in a
+       screen of its own, read-only first, Edit to change it. The plans and the
+       payments are read like the other software — apart, quietly, after the
+       licences — and never by the quarter-hourly watch (audit 43). */
+
+    /* internal (not private) so the tests can draw the screens from made-up plans and payments, as `data` */
+    var plans by mutableStateOf<PlansData?>(null)
+        internal set
+    var plansLoad by mutableStateOf(Load.IDLE)
+        internal set
+    var plansError by mutableStateOf<String?>(null)
+        internal set
+    var payments by mutableStateOf<PaymentsData?>(null)
+        internal set
+    var paymentsLoad by mutableStateOf(Load.IDLE)
+        internal set
+    var paymentsError by mutableStateOf<String?>(null)
+        internal set
+    private var plansJob: Job? = null
+    private var paymentsJob: Job? = null
+    private var plansGen = 0
+    private var paymentsGen = 0
+
+    /** Today, as the payment quick views and the Record payment form read it (the tests may fix it). */
+    internal var today: () -> LocalDate = { LocalDate.now() }
+
+    /** Every customer once, with every software it uses. */
+    val customers: List<Customer> get() = Customers.of(data.companies, fabricCompanies)
+
+    fun customer(key: String): Customer? = Customers.find(customers, key)
+
+    /** The Customers list's quick view (Deleted is companyView). */
+    var customerQuick by mutableStateOf(CustQuick.ALL)
+
+    /** What the Customers list shows, after the quick view, the search and the dashboard's "ending soon". */
+    val customerRows: List<Customer> get() = Customers.filter(customers, customerQuick, companyQuery, companyEnding)
+
+    /* Validity & renewals */
+    var validityQuick by mutableStateOf(ValQuick.ALL)
+    var validityQuery by mutableStateOf("")
+    var validitySoft by mutableStateOf<String?>(null)
+    val validityAll: List<ValidityRow> get() = Validity.rows(customers, plans, payments)
+    val validityShown: List<ValidityRow> get() = Validity.filter(validityAll, validityQuick, validityQuery, validitySoft)
+
+    /* Payments */
+    var payQuick by mutableStateOf(PayQuick.ALL)
+    var payQuery by mutableStateOf("")
+    var paySoft by mutableStateOf<String?>(null)
+    var payKind by mutableStateOf<String?>(null)
+    val paymentsShown: List<Payment>
+        get() = PayFilter.apply(payments?.payments.orEmpty(), payQuick, today(), payQuery, paySoft, payKind)
+
+    fun paymentById(id: Int): Payment? = payments?.byId(id)
+
+    /** The Record payment form while it is open (newPaymentForm fills it). */
+    var payForm by mutableStateOf(PaymentForm())
+
+    /* By software: each its own quick view, tab and search */
+    val swViews = mutableStateMapOf<String, SwView>()
+    fun swView(sw: String): SwView = swViews[sw] ?: SwView()
+    fun setSwView(sw: String, v: SwView) { swViews[sw] = v }
+
+    /* Software & plans */
+    var planSoft by mutableStateOf<String?>(null)
+    var planQuery by mutableStateOf("")
+
+    /** A plan's name by its code ("GOLD" → "Gold"), on [sw]. */
+    fun planName(sw: String, code: String?): String = Plans.nameOf(plans, sw, code)
+
+    /** Why [sw]'s plans cannot be shown — null while they can (or before they have been asked). */
+    fun plansProblem(sw: String): String? {
+        if (plansLoad == Load.FAILED) return plansError ?: "The plans could not be read."
+        val p = plans ?: return null
+        val b = p.block(sw) ?: return "This service does not list ${Software.name(sw)}'s plans."
+        return if (b.supported) null else b.problem
+    }
+
     /** Opened once at startup when a key was remembered. */
     fun resume() {
         if (!signedIn && key.isNotBlank()) load()
@@ -386,7 +475,6 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 refreshedAt = Fmt.clock()
                 if (announce) say("Up to date \u2014 " + refreshedAt, Msg.Kind.OK)
                 settingsForm = SettingsForm.of(fresh.settings)
-                planMatrix = fresh.settings.planFeatures
                 gateError = null
                 if (!signedIn) {
                     signedIn = true
@@ -408,6 +496,9 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 /* 1.9.0 — and the other software, last and apart: Fabric Stock may take a minute to wake */
                 loadProducts()
                 fabricOpen?.let { loadFabricDetail(it, quiet = true) }
+                /* 2.0.0 — the plans of every software and the payments, quietly, apart from the rest */
+                loadPlans()
+                loadPayments()
                 /* And whether a newer build of this application exists. */
                 checkForUpdate()
             } catch (e: Exception) {
@@ -445,6 +536,16 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         software = SoftwareFilter.ALL
         fabricDetail = null
         fabricOpen = null
+        plansJob?.cancel()
+        paymentsJob?.cancel()
+        plans = null
+        plansLoad = Load.IDLE
+        plansError = null
+        payments = null
+        paymentsLoad = Load.IDLE
+        paymentsError = null
+        customerQuick = CustQuick.ALL
+        newCustomer = NewCustomerForm()
     }
 
     /* 4.72.0 — [holdMs]: a long answer that must be read (Delete's) stays longer than six seconds */
@@ -663,7 +764,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 val days = r.optInt("restoreDays", DeletedCompany.KEEP_DAYS)
                 val until = r.optString("purgeAt").takeIf { it.isNotBlank() }?.let { " until " + Fmt.day(it) }.orEmpty()
                 val said = r.optString("warning").ifEmpty {
-                    "$name is deleted and kept for $days days: Restore (Companies → Deleted) puts it back " +
+                    "$name is deleted and kept for $days days: Restore (Customers → Deleted) puts it back " +
                         "exactly as it was$until. After that it is erased for good."
                 }
                 say("$said ($counts are kept until then.)", Msg.Kind.OK, holdMs = 20_000)
@@ -684,37 +785,200 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             say(r.optString("warning").ifEmpty { "${r.optString("name")} is restored." }, Msg.Kind.OK)
         }
 
-    fun createCompany() {
-        val f = newCompany
-        if (f.name.isBlank()) {
+    /**
+     * 2.0.0 — New customer: each software ticked gets its own licence key, made in its own service
+     * (Sales & Costing first, then Fabric Stock linked to it), and the administrator when one was named.
+     * A Fabric Stock that is asleep or refuses leaves the Sales & Costing company made, and says so.
+     * [done] gets the new customer's key (to open its window), or null when nothing was made.
+     */
+    fun createCustomer(done: (String?) -> Unit = {}) {
+        /* Fabric Stock on its first plan when it has plans of its own and none was chosen (the one the screen shows) */
+        val f = newCustomer.let { n ->
+            if (n.fabric && n.fabricPlan == null) n.copy(fabricPlan = plans?.fabric?.takeIf { it.supported }?.livePlans?.firstOrNull()?.code) else n
+        }
+        val name = f.name.trim()
+        if (name.isEmpty()) {
             say("A company name is required.", Msg.Kind.ERR)
             return
         }
-        /* 1.9.0 — on Fabric Stock alone, or on both (Weight Calc first, then Fabric Stock linked to it) */
-        when (f.software) {
-            NewSoftware.FABRIC -> return createFabricOnly(f)
-            NewSoftware.BOTH -> return createOnBoth(f)
-            NewSoftware.WEIGHT -> Unit
+        if (!f.weight && !f.fabric) {
+            say("Tick at least one software.", Msg.Kind.ERR)
+            return
         }
-        companyAction(
-            JSONObject()
-                .put("action", "create")
-                .put("name", f.name.trim())
-                .put("seats", f.seats.toIntOrNull() ?: 1)
-                .put("days", f.days.toIntOrNull() ?: 365)
-                .put("graceDays", f.graceDays.toIntOrNull() ?: 0)
-                .put("gstin", f.gstin.trim().uppercase())
-                .put("email", f.email.trim())
-        ) { r ->
-            val co = r.optJSONObject("company")
-            showNewCompany = false
-            newCompany = NewCompanyForm()
-            if (co != null) {
+        viewModelScope.launch {
+            busy = true
+            val notes = ArrayList<String>()
+            var weightId: Int? = null
+            var weightKey: String? = null
+            var fabricId: Int? = null
+            var fabricKey: String? = null
+            try {
+                if (f.weight) {
+                    val r = api.company(Requests.newWeight(f))
+                    val err = r.optString("error")
+                    if (err.isNotEmpty()) {
+                        say(err, Msg.Kind.ERR)
+                        done(null)
+                        return@launch
+                    }
+                    val co = r.optJSONObject("company")
+                    weightId = co?.optInt("id")?.takeIf { it > 0 }
+                    weightKey = co?.optString("licence_key")?.takeIf { it.isNotEmpty() }
+                    if (weightId != null) {
+                        Requests.newAdmin(weightId, f)?.let { body ->
+                            val a = runCatching { api.company(body) }.getOrNull()
+                            a?.optString("error")?.takeIf { it.isNotEmpty() }?.let { notes += "Sales & Costing administrator: $it" }
+                        }
+                    }
+                }
+                if (f.fabric) {
+                    try {
+                        val r = api.fabric(Requests.newFabric(f, weightId))
+                        val co = r.optJSONObject("company")
+                        fabricId = co?.optInt("id")?.takeIf { it > 0 }
+                        fabricKey = co?.optString("licenceKey")?.takeIf { it.isNotEmpty() }
+                    } catch (e: Exception) {
+                        notes += "Fabric Stock: " + ((e as? ApiError)?.message ?: "something went wrong.")
+                    }
+                }
+                newCustomer = NewCustomerForm()
+                val said = "$name made." +
+                    (weightKey?.let { " Sales & Costing key $it." } ?: "") +
+                    (fabricKey?.let { " Fabric Stock key $it." } ?: "") +
+                    (if (weightKey != null && fabricKey != null) " Two keys — give both to the customer." else "") +
+                    (if (notes.isEmpty()) "" else " " + notes.joinToString(" "))
+                say(said, if (notes.isEmpty()) Msg.Kind.OK else Msg.Kind.WARN, holdMs = 20_000)
+                /* the window opens once the new customer is in the list (load reads Fabric Stock again too) */
+                val made = weightId?.let { "w$it" } ?: fabricId?.let { "f$it" }
+                if (weightId != null) load(onDone = { done(made) })
+                else if (fabricId != null) loadProducts(onDone = { done(made) })
+                else done(null)
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(null)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** 2.0.0 — a new licence key for a Sales & Costing company; the old one stops adding computers and phones. */
+    fun rekey(c: Company) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.company(JSONObject().put("id", c.id).put("action", "rekey"))
+                val err = r.optString("error")
+                if (err.isNotEmpty()) {
+                    say(err, Msg.Kind.ERR)
+                    return@launch
+                }
                 say(
-                    "${co.optString("name")} created. Licence key ${co.optString("licence_key")} — " +
-                        "give this to the customer; every machine types it at activation.",
-                    Msg.Kind.OK
+                    "New licence key for ${r.optString("name").ifEmpty { c.name }}: ${r.optString("key")} — give it only to whoever " +
+                        "adds the next computer or phone. It is also on the customer's Licence tab.",
+                    Msg.Kind.OK, holdMs = 20_000
                 )
+                load()
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /**
+     * 2.0.0 — Save on a Sales & Costing licence edited in its window: one company action per thing that
+     * changed (Requests.weightSteps), every refusal and warning said together, and the list read again.
+     */
+    fun saveWeight(c: Company, e: WeightEdit, done: (Boolean) -> Unit = {}) {
+        val steps = Requests.weightSteps(c, e)
+        if (steps.isEmpty()) {
+            say("Nothing was changed.", Msg.Kind.OK)
+            done(true)
+            return
+        }
+        viewModelScope.launch {
+            busy = true
+            val said = ArrayList<String>()
+            var refused = false
+            try {
+                for (s in steps) {
+                    val r = api.company(s)
+                    r.optString("error").takeIf { it.isNotEmpty() }?.let { said += it; refused = true }
+                    r.optString("warning").takeIf { it.isNotEmpty() }?.let { said += it }
+                }
+            } catch (ex: Exception) {
+                said += (ex as? ApiError)?.message ?: "Something went wrong."
+                refused = true
+            } finally {
+                busy = false
+            }
+            if (said.isEmpty()) say("Saved.", Msg.Kind.OK)
+            else say(said.joinToString(" "), if (refused) Msg.Kind.ERR else Msg.Kind.WARN, holdMs = 12_000)
+            load()
+            done(!refused)
+        }
+    }
+
+    /** 2.0.0 — Save on a Fabric Stock licence edited in its window: one update with what changed. */
+    fun saveFabric(f: FabricCompany, e: FabricEdit, done: (Boolean) -> Unit = {}) {
+        val body = Requests.fabricUpdate(f, e)
+        if (body == null) {
+            say("Nothing was changed.", Msg.Kind.OK)
+            done(true)
+            return
+        }
+        viewModelScope.launch {
+            busy = true
+            var ok = true
+            try {
+                val r = api.fabric(body)
+                val warn = r.optString("warning")
+                say(warn.ifEmpty { "Saved." }, if (warn.isNotEmpty()) Msg.Kind.WARN else Msg.Kind.OK)
+            } catch (ex: Exception) {
+                ok = false
+                say("Fabric Stock: " + ((ex as? ApiError)?.message ?: "something went wrong."), Msg.Kind.ERR)
+            } finally {
+                busy = false
+            }
+            loadProducts()
+            fabricOpen?.let { loadFabricDetail(it, quiet = true) }
+            done(ok)
+        }
+    }
+
+    /**
+     * 2.0.0 — Sales & Costing for a customer on Fabric Stock alone: a year's licence of its own (its own
+     * key), made with the Fabric Stock company's details, then linked to it. [done] gets the customer's
+     * new key ("w…").
+     */
+    fun startWeightFor(f: FabricCompany, done: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.company(Requests.weightFor(f))
+                val err = r.optString("error")
+                if (err.isNotEmpty()) {
+                    say(err, Msg.Kind.ERR)
+                    done(null)
+                    return@launch
+                }
+                val co = r.optJSONObject("company")
+                val id = co?.optInt("id") ?: 0
+                val key = co?.optString("licence_key").orEmpty()
+                val linked = runCatching { api.fabric(JSONObject().put("action", "link").put("id", f.id).put("companyId", id)) }.isSuccess
+                say(
+                    "${f.name} now has Sales & Costing. Its Sales & Costing licence key is $key." +
+                        (if (linked) "" else " It could not be linked to its Fabric Stock company yet — link it from the Company tab."),
+                    if (linked) Msg.Kind.OK else Msg.Kind.WARN, holdMs = 20_000
+                )
+                load(onDone = { done(if (id > 0) "w$id" else null) })
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(null)
+            } finally {
+                busy = false
             }
         }
     }
@@ -818,10 +1082,11 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * The software and Fabric Stock's companies. Quiet: what went wrong is
      * said where it matters — a card with Retry on the Companies list and on
-     * the company — never as a red strip, and the Weight Calc screens never
-     * wait for it.
+     * the company — never as a red strip, and the Sales & Costing screens never
+     * wait for it. 2.0.0 — [onDone], once this read is in (or failed): a new
+     * Fabric Stock customer's window opens when its company is in the list.
      */
-    fun loadProducts() {
+    fun loadProducts(onDone: (() -> Unit)? = null) {
         if (key.isBlank()) return
         val gen = ++productsGen
         productsJob?.cancel()
@@ -833,11 +1098,13 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 products = p
                 productsError = null
                 productsLoad = Load.READY
+                onDone?.invoke()
             } catch (e: Exception) {
                 if (gen != productsGen || e is CancellationException) return@launch
                 products = null
                 productsError = productsProblem(e)
                 productsLoad = Load.FAILED
+                onDone?.invoke()
             }
         }
     }
@@ -994,61 +1261,193 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     /* "… Fabric Stock licence key NFS-… — give this to the customer." */
     private fun fabricCreated(r: JSONObject, lead: String): String {
         val key = r.optJSONObject("company")?.optString("licenceKey").orEmpty()
-        return if (key.isEmpty()) "$lead." else "$lead. Fabric Stock licence key $key — give this to the customer; it is not the Weight Calc key."
+        return if (key.isEmpty()) "$lead." else "$lead. Fabric Stock licence key $key — give this to the customer; it is not the Sales & Costing key."
     }
 
-    private fun createFabricOnly(f: NewCompanyForm) {
-        val demo = f.fabricState == "DEMO"
-        fabricAction(
-            fabricCreateBody(f.name, f.fabricState, f.days.toIntOrNull() ?: if (demo) 7 else 365,
-                f.seats.toIntOrNull() ?: 1, f.graceDays.toIntOrNull() ?: 0, f.gstin, f.email, null)
-        ) { r ->
-            showNewCompany = false
-            newCompany = NewCompanyForm()
-            say(fabricCreated(r, "${f.name.trim()} created on Fabric Stock"), Msg.Kind.OK, holdMs = 15_000)
+    /* ---------- 2.0.0: the plans and the payments ---------- */
+
+    /** Every software's plans. Quiet: what went wrong is said where the plans are shown, never as a red strip. */
+    fun loadPlans() {
+        if (key.isBlank()) return
+        val gen = ++plansGen
+        plansJob?.cancel()
+        plansLoad = Load.LOADING
+        plansJob = viewModelScope.launch {
+            try {
+                val p = api.plans()
+                if (gen != plansGen) return@launch
+                plans = p
+                plansError = null
+                plansLoad = Load.READY
+            } catch (e: Exception) {
+                if (gen != plansGen || e is CancellationException) return@launch
+                plansError = (e as? ApiError)?.let {
+                    if (it.status == 404) "This service has no plans per software yet — it needs the service update." else it.message
+                } ?: "The plans could not be read."
+                plansLoad = Load.FAILED
+            }
         }
     }
 
-    /* Both: the Weight Calc company first, then Fabric Stock's linked to it — one after the other, so a
-       Fabric Stock that is asleep or refuses leaves the Weight Calc company made and says so. */
-    private fun createOnBoth(f: NewCompanyForm) {
+    /** The payments ledger. Quiet, like the plans. */
+    fun loadPayments() {
+        if (key.isBlank()) return
+        val gen = ++paymentsGen
+        paymentsJob?.cancel()
+        paymentsLoad = Load.LOADING
+        paymentsJob = viewModelScope.launch {
+            try {
+                val p = api.payments()
+                if (gen != paymentsGen) return@launch
+                payments = p
+                paymentsError = null
+                paymentsLoad = Load.READY
+            } catch (e: Exception) {
+                if (gen != paymentsGen || e is CancellationException) return@launch
+                paymentsError = (e as? ApiError)?.let {
+                    if (it.status == 404) "This service keeps no payments yet — it needs the service update." else it.message
+                } ?: "The payments could not be read."
+                paymentsLoad = Load.FAILED
+            }
+        }
+    }
+
+    /**
+     * Create (no [existing]) or update a plan. [done] gets the plan as the service saved it (null when
+     * refused — Fabric Stock answers 501 NOT_YET until it has plans of its own).
+     */
+    fun savePlan(sw: String, existing: Plan?, form: PlanForm, done: (Plan?) -> Unit = {}) {
+        if (form.name.isBlank()) {
+            say("Give the plan a name.", Msg.Kind.ERR)
+            return
+        }
         viewModelScope.launch {
             busy = true
             try {
-                val seats = f.seats.toIntOrNull() ?: 1
-                val days = f.days.toIntOrNull() ?: 365
-                val grace = f.graceDays.toIntOrNull() ?: 0
-                val r = api.company(
-                    JSONObject().put("action", "create").put("name", f.name.trim()).put("seats", seats).put("days", days)
-                        .put("graceDays", grace).put("gstin", f.gstin.trim().uppercase()).put("email", f.email.trim())
+                val r = api.planAction(Requests.planSave(sw, existing, form))
+                val p = r.optJSONObject("plan")?.let { Plan.from(it) }
+                say(
+                    (if (existing != null) "Saved: " else "Made: ") + (p?.name ?: form.name.trim()) +
+                        ". Every customer on it hears it at their next check.",
+                    Msg.Kind.OK
                 )
-                val err = r.optString("error")
-                if (err.isNotEmpty()) {
-                    say(err, Msg.Kind.ERR)
-                    return@launch
-                }
-                showNewCompany = false
-                newCompany = NewCompanyForm()
-                val co = r.optJSONObject("company")
-                val weightKey = co?.optString("licence_key").orEmpty()
-                val weightId = co?.optInt("id") ?: 0
-                val made = "${f.name.trim()} created. Weight Calc licence key $weightKey"
-                try {
-                    val body = fabricCreateBody(f.name, "LICENSED", days, seats, grace, f.gstin, f.email, null)
-                    if (weightId > 0) body.put("linkTo", weightId)
-                    val fr = api.fabric(body)
-                    val fabricKey = fr.optJSONObject("company")?.optString("licenceKey").orEmpty()
-                    say("$made; Fabric Stock licence key $fabricKey — two keys, give both to the customer.", Msg.Kind.OK, holdMs = 20_000)
-                } catch (e: Exception) {
-                    say(
-                        "$made. Fabric Stock was not started: ${(e as? ApiError)?.message ?: "something went wrong."} " +
-                            "Open the company's Fabric Stock tab to start it.",
-                        Msg.Kind.WARN, holdMs = 20_000
-                    )
-                }
-                load()
+                loadPlans()
+                done(p)
             } catch (e: Exception) {
                 say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(null)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** retire, restore or delete a plan; [done] is told whether it was done. */
+    fun planDo(sw: String, action: String, p: Plan, done: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                api.planAction(Requests.planAction(sw, action, p.code))
+                say(
+                    when (action) {
+                        "retire" -> "${p.name} is retired — no longer offered to a new customer; the ${p.customers} on it keep it."
+                        "restore" -> "${p.name} is in use again."
+                        else -> "${p.name} is deleted."
+                    },
+                    Msg.Kind.OK
+                )
+                loadPlans()
+                done(true)
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(false)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /**
+     * The Record payment form, for [presetKey]'s customer (else the first one with [presetSw], else the
+     * first) and [presetSw] when that customer has it — paid today, renewing a year.
+     */
+    fun newPaymentForm(presetKey: String? = null, presetSw: String? = null): PaymentForm {
+        val all = customers
+        val c = presetKey?.let { customer(it) }
+            ?: presetSw?.let { sw -> all.firstOrNull { it.has(sw) } }
+            ?: all.firstOrNull()
+        val sw = when {
+            c == null -> presetSw ?: Software.WEIGHT
+            presetSw != null && c.has(presetSw) -> presetSw
+            c.w != null -> Software.WEIGHT
+            else -> Software.FABRIC
+        }
+        return PaymentForm(customerKey = c?.key.orEmpty(), software = sw, paidOn = today().toString())
+    }
+
+    /** Record payment; with a renewal chosen the licence is renewed in the same step. [done] gets the payment. */
+    fun recordPayment(form: PaymentForm, done: (Payment?) -> Unit = {}) {
+        val c = customer(form.customerKey)
+        when {
+            c == null -> return say("Choose the customer.", Msg.Kind.ERR)
+            !c.has(form.software) -> return say("This customer has no ${Software.name(form.software)} licence.", Msg.Kind.ERR)
+            (Money.parse(form.amount) ?: 0.0) <= 0.0 -> return say("Enter the amount received.", Msg.Kind.ERR)
+        }
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.paymentAction(Requests.paymentAdd(form, c!!))
+                val p = r.optJSONObject("payment")?.let { Payment.from(it) }
+                val warn = r.optString("warning")
+                say(
+                    warn.ifEmpty {
+                        "Recorded ${Money.rupees(p?.amount ?: Money.parse(form.amount))} from ${p?.customer ?: c.name}" +
+                            (p?.validTo?.let { " — valid to " + Fmt.day(it) } ?: "") + "."
+                    },
+                    if (warn.isNotEmpty()) Msg.Kind.WARN else Msg.Kind.OK, holdMs = if (warn.isNotEmpty()) 15_000 else 6_000
+                )
+                loadPayments()
+                if (form.extendDays > 0) load()
+                done(p)
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(null)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun updatePayment(form: PaymentForm, done: (Boolean) -> Unit = {}) {
+        if ((Money.parse(form.amount) ?: 0.0) <= 0.0) return say("Enter the amount received.", Msg.Kind.ERR)
+        viewModelScope.launch {
+            busy = true
+            try {
+                api.paymentAction(Requests.paymentUpdate(form))
+                say("Saved.", Msg.Kind.OK)
+                loadPayments()
+                done(true)
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(false)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** Off the list; the service keeps it, and its Activity list that it was deleted. */
+    fun deletePayment(p: Payment, done: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            busy = true
+            try {
+                api.paymentAction(Requests.paymentDelete(p.id))
+                say("Deleted the payment of ${Money.rupees(p.amount)} from ${p.customer}.", Msg.Kind.OK)
+                loadPayments()
+                done(true)
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(false)
             } finally {
                 busy = false
             }
@@ -1317,42 +1716,10 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
 
     /* ---------- service settings ---------- */
 
-    /* ---- the plans (1.5.0) ---- */
-
-    fun setPlanFeature(plan: String, feature: String, on: Boolean) {
-        val row = HashMap(planMatrix[plan] ?: emptyMap())
-        row[feature] = on
-        val m = HashMap(planMatrix)
-        m[plan] = row
-        planMatrix = m
-    }
-
-    fun savePlans() {
-        viewModelScope.launch {
-            busy = true
-            try {
-                val body = JSONObject()
-                for (plan in listOf("STANDARD", "PRO")) {
-                    val row = JSONObject()
-                    PLAN_FEATURES.forEach { f -> row.put(f.id, planMatrix[plan]?.get(f.id) == true) }
-                    body.put(plan, row)
-                }
-                api.settings(JSONObject().put("planFeatures", body))
-                say("Plans saved — every installation reads them at its next check.", Msg.Kind.OK)
-                load()
-            } catch (e: Exception) {
-                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
-            } finally {
-                busy = false
-            }
-        }
-    }
+    /* ---- the plan of one company (2.0.0: any active plan the owner made) ---- */
 
     fun setPlan(id: Int, plan: String) =
-        companyAction(
-            JSONObject().put("id", id).put("action", "plan").put("plan", plan),
-            okText = if (plan == "STANDARD") "Now on Standard — calculation and costing." else "Now on Pro — everything."
-        )
+        companyAction(Requests.plan(id, plan), okText = "Now on ${planName(Software.WEIGHT, plan)}.")
 
     /* ---- a message from Nexora into every room (1.5.0) ---- */
 

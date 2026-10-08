@@ -75,7 +75,7 @@ class LockHidesQuestionsTest {
         rule.waitForIdle()
 
         /* The owner opens a company and asks to suspend it … */
-        tap("Companies")
+        tap("Customers")
         tap("Shree Demo Sacks")
         rule.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Suspend"))
         tap("Suspend")

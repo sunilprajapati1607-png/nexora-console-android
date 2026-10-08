@@ -23,12 +23,31 @@ import java.time.Instant
    null-safe readers as Models.kt, so a missing field is a blank, not a crash.
    ====================================================================== */
 
-/** The software the console sells, by the service's own ids and the names the screens use. */
+/**
+ * The software the console sells, by the service's own ids and the names the screens use.
+ *
+ * 2.0.0 — the weight-calculation software is called "Sales & Costing" on the console (owner,
+ * 2026-10-08, as the web console); its id stays "weight". Jobwork has no licence yet: it is
+ * shown as "coming" and nothing can be done to it.
+ */
 object Software {
     const val WEIGHT = "weight"
     const val FABRIC = "fabric"
-    const val WEIGHT_NAME = "Weight Calc"
+    const val JOBWORK = "jobwork"
+    const val WEIGHT_NAME = "Sales & Costing"
     const val FABRIC_NAME = "Fabric Stock"
+    const val JOBWORK_NAME = "Jobwork"
+
+    /** The name a screen shows for a software id. */
+    fun name(id: String?): String = when (id) {
+        WEIGHT -> WEIGHT_NAME
+        FABRIC -> FABRIC_NAME
+        JOBWORK -> JOBWORK_NAME
+        else -> id ?: "-"
+    }
+
+    /** The other of the two that have licences. */
+    fun other(id: String): String = if (id == FABRIC) WEIGHT else FABRIC
 }
 
 /**
@@ -427,8 +446,16 @@ object CompanyList {
     }
 }
 
-/* An ISO moment with its zone, or a plain date-time read as UTC; null when there is none. */
-private fun moment(s: String?): Instant? {
+/* An ISO moment with its zone, or a plain date-time read as UTC; null when there is none.
+   2.0.0 — internal, so the customer lists sort by the same reading. A plain date (2026-10-08) is its midnight UTC. */
+internal fun moment(s: String?): Instant? {
+    if (!s.isNullOrBlank() && s.length == 10) {
+        runCatching { return java.time.LocalDate.parse(s).atStartOfDay(java.time.ZoneOffset.UTC).toInstant() }
+    }
+    return momentOf(s)
+}
+
+private fun momentOf(s: String?): Instant? {
     if (s.isNullOrBlank()) return null
     return runCatching { Instant.parse(s) }.getOrNull()
         ?: runCatching { java.time.OffsetDateTime.parse(s).toInstant() }.getOrNull()

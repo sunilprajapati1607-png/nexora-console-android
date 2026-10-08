@@ -77,7 +77,7 @@ class RenewSoon4720Test {
         /* the dashboard's warning stays at 15 days: no card for 24 */
         rule.onAllNodesWithText("Ending Soon", substring = true).assertCountEquals(0)
 
-        tap("Companies")
+        tap("Customers")
         rule.onAllNodesWithText("renew soon").assertCountEquals(1)
 
         tap("Om Poly Packs")
