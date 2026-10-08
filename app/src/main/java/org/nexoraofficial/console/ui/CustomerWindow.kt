@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -73,14 +74,15 @@ import org.nexoraofficial.console.data.Customers
 import org.nexoraofficial.console.data.FabricCompany
 import org.nexoraofficial.console.data.FabricEdit
 import org.nexoraofficial.console.data.FeatureTag
+import org.nexoraofficial.console.data.FeatureView
 import org.nexoraofficial.console.data.Features
 import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.data.Money
 import org.nexoraofficial.console.data.PayFilter
 import org.nexoraofficial.console.data.Plans
+import org.nexoraofficial.console.data.Requests
 import org.nexoraofficial.console.data.Software
 import org.nexoraofficial.console.data.WeightEdit
-import org.nexoraofficial.console.data.groupsOf
 import org.nexoraofficial.console.ui.theme.LocalNexora
 
 /* ======================================================================
@@ -90,8 +92,14 @@ import org.nexoraofficial.console.ui.theme.LocalNexora
    says who it is and DISPLAY or EDIT; the tools act on the software shown;
    who they are (name, GSTIN, email, mobile, note); a tab for each software
    — Sales & Costing, Fabric Stock, Jobwork (coming) — and under the one
-   shown its own tabs: Licence · Features (Sales & Costing) · People ·
-   Computers & phones · Payments · More (Company on Fabric Stock).
+   shown its own tabs: Licence · Features · People · Computers & phones ·
+   Payments · More (Company on Fabric Stock).
+
+   2.0.1 — Fabric Stock has its own plans and features (its 0.8.1 service):
+   a Features tab like Sales & Costing's (the same cards, its own catalogue),
+   a plan chooser on its Licence in Edit and a Plan tool; Save sends plan,
+   features and the rest in its one update. An older Fabric Stock service
+   (no plans) keeps 2.0.0's tabs.
 
    Read-only first. Edit opens the licence, the identity and the features
    for change; Save sends each change the web console sends (plan, seats,
@@ -125,6 +133,9 @@ fun CustomerWindow(
     CustomerBody(vm, nav, x, screen, gutter, page, onAsk)
 }
 
+/** Where the software's own tabs sit in the window's list: after "head", "tools", "identity" and "software". */
+private const val SUBS_ITEM = 4
+
 @Composable
 private fun CustomerBody(
     vm: ConsoleViewModel,
@@ -145,11 +156,13 @@ private fun CustomerBody(
     val weightTab = sw == Software.WEIGHT
     val c = x.w
     val f = x.f
+    /* 2.0.1 — Fabric Stock has a Features tab once its own service has plans (0.8.1); an older one keeps 2.0.0's tabs */
+    val fabricPlans = Plans.supported(vm.plans, Software.FABRIC)
     val subs = if (weightTab)
         listOf("licence" to "Licence", "features" to "Features", "people" to "People", "computers" to "Computers & phones",
             "payments" to "Payments", "more" to "More")
-    else listOf("licence" to "Licence", "people" to "People", "computers" to "Computers & phones", "payments" to "Payments",
-        "company" to "Company")
+    else listOfNotNull("licence" to "Licence", if (fabricPlans) "features" to "Features" else null, "people" to "People",
+        "computers" to "Computers & phones", "payments" to "Payments", "company" to "Company")
     val sub = if (subs.any { it.first == subPicked }) subPicked else "licence"
     val licence = if (weightTab) c != null else f != null
 
@@ -171,7 +184,7 @@ private fun CustomerBody(
         if (weightTab) wEdit = c?.let { WeightEdit.of(it) } ?: return
         else fEdit = f?.let { FabricEdit.of(it) } ?: return
         editing = true
-        subPicked = onSub ?: if (sub == "licence" || (weightTab && sub == "features")) sub else "licence"
+        subPicked = onSub ?: if (sub == "licence" || sub == "features") sub else "licence"
     }
 
     /* Back while editing asks first (the bar's arrow and the phone's both come here) */
@@ -204,8 +217,15 @@ private fun CustomerBody(
     val order = vm.customerRows.map { it.key }
     val at = order.indexOf(key)
 
+    /* 2.0.1 — Plan and Seats open the Licence in Edit and bring it into view (the web console focuses the field):
+       the window is scrolled to its tabs — the fifth item, after the head, the tools, who they are and the software */
+    val list = rememberLazyListState()
+    var bringLicence by remember(key) { mutableStateOf(0) }
+    LaunchedEffect(bringLicence) { if (bringLicence > 0) list.animateScrollToItem(SUBS_ITEM) }
+
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = list,
         contentPadding = gutter,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -223,7 +243,7 @@ private fun CustomerBody(
                     customerTools(
                         vm, nav, x, sw, editing, onAsk,
                         edit = { startEditing() },
-                        editOn = { s -> startEditing(s) },
+                        editOn = { s -> startEditing(s); if (editing) bringLicence++ },
                         save = {
                             if (weightTab && c != null) wEdit?.let { e -> vm.saveWeight(c, e) { ok -> if (ok) stopEditing() } }
                             else if (f != null) fEdit?.let { e -> vm.saveFabric(f, e) { ok -> if (ok) stopEditing() } }
@@ -254,8 +274,8 @@ private fun CustomerBody(
                     val counts = buildMap {
                         val pays = vm.payments?.of(x, sw)?.size ?: 0
                         if (pays > 0) put("payments", pays.toString())
-                        val n = c?.featureOverrides?.size ?: 0
-                        if (weightTab && n > 0) put("features", "± $n")
+                        val n = Customers.ownCount(x, sw)
+                        if (n > 0) put("features", "± $n")
                     }
                     SubTabs(subs, sub, counts) { pick -> if (pick != sub) leaveEdit { subPicked = pick } }
                 }
@@ -359,6 +379,10 @@ private fun customerTools(
         } else Tool("+1 year", Icons.Outlined.Update, ToolColours.amber) {
             onAsk(Ask.Confirm("Add a year to Fabric Stock for ${f.name}?", "Fabric Stock now ends on " +
                 Fmt.day(f.renewEnd(365).toString()) + ".", "Add a year") { vm.fabricAddDays(f, 365) })
+        }
+        /* 2.0.1 — its own plans (Fabric Stock 0.8.1): Plan opens the Licence in Edit, as Sales & Costing's does */
+        if (Plans.supported(vm.plans, Software.FABRIC)) {
+            t += Tool("Plan", Icons.Outlined.WorkspacePremium, ToolColours.violet, !editing) { editOn("licence") }
         }
         t += Tool("Seats", Icons.Outlined.Group, ToolColours.teal, !editing) { editOn("licence") }
         t += if (f.state == "SUSPENDED") Tool("Restore", Icons.Outlined.PlayCircle, ToolColours.green) { onAsk(fabricRestoreQuestion(vm, f)) }
@@ -511,10 +535,9 @@ private fun LazyListScope.weightItems(
                 }
             }
         }
-        "features" -> {
-            item(key = "w-features-sum") { Box(page) { FeatureSummaryCard(vm, c, edit, onEdit) } }
-            item(key = "w-features") { Box(page) { FeatureListCard(vm, c, edit, onEdit) } }
-        }
+        "features" -> featureItems(
+            "w", Features.viewOf(vm.plans, vm.data.settings, c), edit?.features, page
+        ) { d -> edit?.let { onEdit(it.copy(features = d)) } }
         "people" -> {
             item(key = "w-signin") { Box(page) { WeightSignInCard(c, vm, onAsk) } }
             item(key = "w-people") { Box(page) { PeopleCard(c, vm, onAsk) } }
@@ -632,18 +655,31 @@ private fun WeightLicenceCard(vm: ConsoleViewModel, c: Company, edit: WeightEdit
     }
 }
 
-/* ---- the features over the plan ---- */
+/* ---- the features over the plan (2.0.1: any software — Sales & Costing's and Fabric Stock's alike) ---- */
+
+/**
+ * A licence's Features tab: the summary, then every feature by group. [draft] is the changes being made
+ * in Edit (null in DISPLAY: the rows cannot be tapped); [onDraft] gets the draft after a tap or "Back to
+ * the plan only". [prefix] keeps each software's list items apart.
+ */
+private fun LazyListScope.featureItems(
+    prefix: String,
+    view: FeatureView,
+    draft: Map<String, Boolean?>?,
+    page: Modifier,
+    onDraft: (Map<String, Boolean?>) -> Unit
+) {
+    item(key = "$prefix-features-sum") { Box(page) { FeatureSummaryCard(view, draft, onDraft) } }
+    item(key = "$prefix-features") { Box(page) { FeatureListCard(view, draft, onDraft) } }
+}
 
 @Composable
-private fun FeatureSummaryCard(vm: ConsoleViewModel, c: Company, edit: WeightEdit?, onEdit: (WeightEdit) -> Unit) {
+private fun FeatureSummaryCard(view: FeatureView, draft: Map<String, Boolean?>?, onDraft: (Map<String, Boolean?>) -> Unit) {
     val cl = LocalNexora.current
-    val catalogue = Plans.catalogue(vm.plans, Software.WEIGHT)
-    val plan = Plans.ticks(vm.plans, vm.data.settings, c.plan)
-    val own = if (edit != null) Features.merge(c.featureOverrides, edit.features) else c.featureOverrides
-    val s = Features.summary(catalogue, plan, own)
+    val s = view.summary(draft)
     ConsoleCard(padding = 14) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(vm.planName(Software.WEIGHT, c.plan), color = cl.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(view.planName, color = cl.text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Text(" gives ${s.fromPlan} of ${s.total}", color = cl.text, fontSize = 14.sp)
         }
         Spacer(Modifier.height(4.dp))
@@ -655,33 +691,32 @@ private fun FeatureSummaryCard(vm: ConsoleViewModel, c: Company, edit: WeightEdi
         Spacer(Modifier.height(6.dp))
         Small(
             when {
-                c.isDemo -> "A demo has every feature; these apply once it is licensed."
-                edit != null -> "Tap a feature to add it or take it off for ${c.name} only. The plan itself stays as it is."
+                view.demo -> "A demo has every feature; these apply once it is licensed."
+                draft != null -> "Tap a feature to add it or take it off for ${view.name} only. The plan itself stays as it is."
                 else -> "Grey until Edit. The plan itself stays as it is."
             }
         )
-        if (edit != null) {
+        if (draft != null) {
             Spacer(Modifier.height(8.dp))
-            ConsoleButton("Back to the plan only", { onEdit(edit.copy(features = Features.resetAll(catalogue))) }, small = true)
+            ConsoleButton("Back to the plan only", { onDraft(view.reset()) }, small = true)
         }
     }
 }
 
 @Composable
-private fun FeatureListCard(vm: ConsoleViewModel, c: Company, edit: WeightEdit?, onEdit: (WeightEdit) -> Unit) {
-    val catalogue = Plans.catalogue(vm.plans, Software.WEIGHT)
-    val plan = Plans.ticks(vm.plans, vm.data.settings, c.plan)
-    val own = if (edit != null) Features.merge(c.featureOverrides, edit.features) else c.featureOverrides
+private fun FeatureListCard(view: FeatureView, draft: Map<String, Boolean?>?, onDraft: (Map<String, Boolean?>) -> Unit) {
+    val own = view.ownWith(draft)
     ConsoleCard(padding = 14) {
-        groupsOf(catalogue).forEachIndexed { gi, g ->
+        if (view.catalogue.isEmpty()) Help("${Software.name(view.sw)} sent no features to show.")
+        view.groups.forEachIndexed { gi, g ->
             if (gi > 0) Spacer(Modifier.height(12.dp))
             Text(g.uppercase(), color = LocalNexora.current.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
             Spacer(Modifier.height(6.dp))
-            catalogue.filter { it.group == g }.forEach { fe ->
-                val p = plan[fe.id] == true
+            view.catalogue.filter { it.group == g }.forEach { fe ->
+                val p = view.plan[fe.id] == true
                 val o = own[fe.id]
-                FeatureRow(fe.label, Features.tag(p, o), Features.effective(p, o), edit != null) {
-                    if (edit != null) onEdit(edit.copy(features = Features.toggle(fe.id, plan, c.featureOverrides, edit.features)))
+                FeatureRow(fe.label, Features.tag(p, o), Features.effective(p, o), draft != null) {
+                    if (draft != null) onDraft(view.toggle(fe.id, draft))
                 }
             }
         }
@@ -796,6 +831,10 @@ private fun LazyListScope.fabricItems(
                 }
             }
         }
+        /* 2.0.1 — its own features over its own plan (the tab is there only when Fabric Stock's service has plans) */
+        "features" -> featureItems(
+            "f", Features.viewOf(vm.plans, vm.data.settings, f), edit?.features, page
+        ) { d -> edit?.let { onEdit(it.copy(features = d)) } }
         "people" -> {
             item(key = "f-signin") { Box(page) { FabricSignInCard(vm, f, onAsk) } }
             item(key = "f-people") { Box(page) { FabricPeopleCard(vm, f, onAsk) } }
@@ -816,11 +855,33 @@ private fun FabricLicenceCard(vm: ConsoleViewModel, f: FabricCompany, edit: Fabr
             MessageStrip(Msg("The Fabric Stock licence ends ${Fmt.day(f.expiresAt)} — call them to renew.", Msg.Kind.WARN), onDismiss = {})
             Spacer(Modifier.height(12.dp))
         }
-        FieldPair(
-            { ReadField("Plan", vm.planName(Software.FABRIC, f.plan) + if (f.onDemo) " — a demo has everything" else "", it) },
-            { ReadField("State", Customers.stateWord(s), it, valueColor = stateColour(s)) }
-        )
-        Spacer(Modifier.height(8.dp))
+        val block = vm.plans?.fabric?.takeIf { it.supported }
+        if (edit != null && block != null) {
+            /* 2.0.1 — its own plans (Fabric Stock 0.8.1): the ones in use, and the one it is on even if retired */
+            val current = Requests.fabricPlan(f)
+            val offered = block.plans.filter { it.active || it.code == current }
+            val options = offered.map { it.code to (it.name + if (!it.active) " (retired)" else "") }
+                .ifEmpty { listOf(current to vm.planName(Software.FABRIC, current, f.planName)) }
+            val chosen = block.plan(edit.plan)
+            ChoiceField(
+                "Plan", options, edit.plan,
+                help = listOfNotNull(
+                    chosen?.note,
+                    chosen?.priceRenewal?.let { "renewal ${Money.rupees(it)} a year" },
+                    if (f.isDemo) "a demo has every feature whatever its plan" else null
+                ).joinToString(" · ").ifEmpty { null }
+            ) { onEdit(edit.copy(plan = it)) }
+            Spacer(Modifier.height(10.dp))
+        } else {
+            FieldPair(
+                {
+                    ReadField("Plan", vm.planName(Software.FABRIC, f.plan, f.planName) + Customers.own(f.featureOverrides.size) +
+                        if (f.onDemo) " — a demo has everything" else "", it)
+                },
+                { ReadField("State", Customers.stateWord(s), it, valueColor = stateColour(s)) }
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         ReadField("Licence key", f.licenceKey, mono = true) {
             ConsoleButton("Copy", {
                 clipboard.setText(AnnotatedString(f.licenceKey))
@@ -852,7 +913,10 @@ private fun FabricLicenceCard(vm: ConsoleViewModel, f: FabricCompany, edit: Fabr
                 { ConsoleField("Offline days (0–30)", edit.graceDays, { v -> onEdit(edit.copy(graceDays = v.filter { ch -> ch.isDigit() })) }, it, numeric = true) }
             )
             Spacer(Modifier.height(6.dp))
-            Help("Fabric Stock's own seats and offline days — Sales & Costing's are counted apart.")
+            Help(
+                "Fabric Stock's own " + (if (block != null) "plan, seats, offline days and features" else "seats and offline days") +
+                    " — Sales & Costing's are counted apart. Save sends them to Fabric Stock in one update."
+            )
         } else {
             FieldPair(ends) { ReadField("Seats (people)", "${f.people} of ${f.seats}", it) }
             Spacer(Modifier.height(8.dp))

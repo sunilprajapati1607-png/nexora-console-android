@@ -41,12 +41,17 @@ data class FabricEdit(
     val phone: String,
     val note: String,
     val seats: String,
-    val graceDays: String
+    val graceDays: String,
+    /** 2.0.1 — its plan's code (Standard when its service named none). */
+    val plan: String = "STANDARD",
+    /** 2.0.1 — the feature changes being made: true added, false off, null back to the plan. */
+    val features: Map<String, Boolean?> = emptyMap()
 ) {
     companion object {
         fun of(f: FabricCompany) = FabricEdit(
             name = f.name, gstin = f.gstin.orEmpty(), email = f.email.orEmpty(), phone = f.phone.orEmpty(),
-            note = f.notes.orEmpty(), seats = f.seats.toString(), graceDays = f.graceDays.toString()
+            note = f.notes.orEmpty(), seats = f.seats.toString(), graceDays = f.graceDays.toString(),
+            plan = Requests.fabricPlan(f)
         )
     }
 }
@@ -145,7 +150,17 @@ object Requests {
         return out
     }
 
-    /** Save on a Fabric Stock licence: one update with what changed, or null when nothing did. */
+    /** A Fabric Stock company's plan code, Standard when its service named none (the web console's f.plan||'STANDARD'). */
+    fun fabricPlan(f: FabricCompany): String = f.plan?.trim()?.uppercase()?.takeIf { it.isNotEmpty() } ?: "STANDARD"
+
+    /**
+     * Save on a Fabric Stock licence: one update with what changed, or null when nothing did.
+     *
+     * 2.0.1 — with the plan when it was changed, and the customer's own features as "featureOverrides":
+     * only the keys that change its own list, null taking one back to the plan (Fabric Stock 0.8.1's
+     * update; the web console's saveCustomer sends the same). A retired or unknown plan is refused by
+     * the service in a sentence, which the window shows.
+     */
     fun fabricUpdate(f: FabricCompany, e: FabricEdit): JSONObject? {
         val b = JSONObject().put("action", "update").put("id", f.id)
         val name = e.name.trim()
@@ -159,6 +174,14 @@ object Requests {
         if (seats != f.seats) b.put("seats", seats)
         val grace = int(e.graceDays, f.graceDays)
         if (grace != f.graceDays) b.put("graceDays", grace)
+        val plan = e.plan.trim().uppercase()
+        if (plan.isNotEmpty() && plan != fabricPlan(f)) b.put("plan", plan)
+        val changes = Features.changes(f.featureOverrides, e.features)
+        if (changes.isNotEmpty()) {
+            val o = JSONObject()
+            changes.forEach { (k, v) -> o.put(k, v ?: JSONObject.NULL) }
+            b.put("featureOverrides", o)
+        }
         return if (b.length() > 2) b else null
     }
 

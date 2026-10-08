@@ -151,18 +151,28 @@ object Customers {
         }
     }
 
-    /** "Sales & Costing · Standard ± 2 · 245 days" — one software of a customer, on one line. */
+    /**
+     * "Sales & Costing · Standard ± 2 · 245 days" — one software of a customer, on one line.
+     * 2.0.1 — Fabric Stock's own changes over its plan show as "± n" too (its 0.8.1 service).
+     */
     fun line(x: Customer, sw: String, plans: PlansData?): String? {
         return if (sw == Software.WEIGHT) {
             val c = x.w ?: return null
-            val n = c.featureOverrides.size
-            Software.WEIGHT_NAME + " · " + Plans.nameOf(plans, sw, c.plan) + (if (n > 0) " ± $n" else "") + " · " +
+            Software.WEIGHT_NAME + " · " + Plans.nameOf(plans, sw, c.plan) + own(c.featureOverrides.size) + " · " +
                 daysText(c.swState, c.daysLeft, c.expiresAt)
         } else {
             val f = x.f ?: return null
-            Software.FABRIC_NAME + " · " + Plans.nameOf(plans, sw, f.plan) + " · " + daysText(f.shownState, f.daysLeft, f.expiresAt)
+            Software.FABRIC_NAME + " · " + Plans.nameOf(plans, sw, f.plan, f.planName) + own(f.featureOverrides.size) + " · " +
+                daysText(f.shownState, f.daysLeft, f.expiresAt)
         }
     }
+
+    /** " ± 2" after a plan's name when a customer has features of its own over it; nothing when it has none. */
+    fun own(n: Int): String = if (n > 0) " ± $n" else ""
+
+    /** How many features of its own [x] has over its plan on [sw]. */
+    fun ownCount(x: Customer, sw: String): Int =
+        if (sw == Software.WEIGHT) x.w?.featureOverrides?.size ?: 0 else x.f?.featureOverrides?.size ?: 0
 
     /** "Standard ± 3 · 245 days" — the same without the software's name (the customer's software tabs). */
     fun tabLine(x: Customer, sw: String, plans: PlansData?): String? =
@@ -200,7 +210,7 @@ object Validity {
                     c.periodStartedAt, c.expiresAt, c.daysLeft, c.seats, payments?.last(x, Software.WEIGHT))
             }
             x.f?.let { f ->
-                out += ValidityRow(x, Software.FABRIC, Plans.nameOf(plans, Software.FABRIC, f.plan), f.shownState,
+                out += ValidityRow(x, Software.FABRIC, Plans.nameOf(plans, Software.FABRIC, f.plan, f.planName), f.shownState,
                     f.periodStartedAt ?: f.createdAt, f.expiresAt, f.daysLeft, f.seats, payments?.last(x, Software.FABRIC))
             }
         }
@@ -320,4 +330,69 @@ object Features {
     /** The draft as it is sent: only what changes the customer's own list (a null that removes nothing is dropped). */
     fun changes(own: Map<String, Boolean>, draft: Map<String, Boolean?>): Map<String, Boolean?> =
         draft.filter { (k, v) -> if (v == null) own.containsKey(k) else own[k] != v }
+
+    /** 2.0.1 — a Sales & Costing licence's features over its plan. */
+    fun viewOf(data: PlansData?, settings: ServiceSettings, c: Company) = FeatureView(
+        sw = Software.WEIGHT,
+        name = c.name,
+        planName = Plans.nameOf(data, Software.WEIGHT, c.plan),
+        catalogue = Plans.catalogue(data, Software.WEIGHT),
+        plan = Plans.ticksOf(data, settings, Software.WEIGHT, c.plan),
+        own = c.featureOverrides,
+        demo = c.isDemo
+    )
+
+    /** 2.0.1 — a Fabric Stock licence's features over its plan (its own catalogue and plans, from its own service). */
+    fun viewOf(data: PlansData?, settings: ServiceSettings, f: FabricCompany) = FeatureView(
+        sw = Software.FABRIC,
+        name = f.name,
+        planName = Plans.nameOf(data, Software.FABRIC, f.plan, f.planName),
+        catalogue = Plans.catalogue(data, Software.FABRIC),
+        plan = Plans.ticksOf(data, settings, Software.FABRIC, f.plan),
+        own = f.featureOverrides,
+        /* Fabric Stock's own rule: is_demo, whatever the state says (its service's resolveFeatures) */
+        demo = f.isDemo
+    )
+}
+
+/**
+ * 2.0.1 — ONE LICENCE'S FEATURES OVER ITS PLAN, WHICHEVER SOFTWARE IT IS.
+ *
+ * What the customer window's Features tab draws, for Sales & Costing and for Fabric Stock alike (the web
+ * console's featBody(sw, l)): each comes with its own catalogue and its own plan's ticks, so the two are
+ * never mixed. The rules are the ones above — a demo has every feature; else the customer's own change,
+ * else the plan's tick — and a tap while editing keeps only what differs from the plan.
+ */
+data class FeatureView(
+    val sw: String,
+    /** The customer's name ("for … only"). */
+    val name: String,
+    val planName: String,
+    val catalogue: List<FeatureDef>,
+    /** What its plan gives. */
+    val plan: Map<String, Boolean>,
+    /** Its own changes as saved: true added, false off. */
+    val own: Map<String, Boolean>,
+    val demo: Boolean
+) {
+    /** The groups, in the order the tab shows them (Sales & Costing's own order; any other software's as it sent them). */
+    val groups: List<String> get() = groupsOf(catalogue, sw)
+
+    /** Its own changes with [draft] (the changes being made in Edit) laid over them. */
+    fun ownWith(draft: Map<String, Boolean?>?): Map<String, Boolean> = if (draft == null) own else Features.merge(own, draft)
+
+    /** "Standard gives 16 of 16 · +0 added · −1 off → 15 on". */
+    fun summary(draft: Map<String, Boolean?>? = null): Features.Summary = Features.summary(catalogue, plan, ownWith(draft))
+
+    /** Whether [id] is on for the plant: a demo has every feature; else its own change, else its plan's tick. */
+    fun on(id: String): Boolean = Features.effective(plan[id] == true, own[id], demo)
+
+    /** Every feature of its catalogue, on or off, as the application gets it. */
+    val effective: Map<String, Boolean> get() = catalogue.associate { it.id to on(it.id) }
+
+    /** One tap on [id] while editing. */
+    fun toggle(id: String, draft: Map<String, Boolean?>): Map<String, Boolean?> = Features.toggle(id, plan, own, draft)
+
+    /** "Back to the plan only". */
+    fun reset(): Map<String, Boolean?> = Features.resetAll(catalogue)
 }

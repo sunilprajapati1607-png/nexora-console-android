@@ -1,9 +1,9 @@
 {
-    "versionCode": 22,
-    "versionName": "2.0.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.0.0-22.apk",
-    "notes": "Console 2.0: the console as software. Rows that open windows (Display, then Edit); by customer and by software (Sales & Costing, Fabric Stock); plans per software made by you, prices open until you set them; a customer’s own features over its plan (+ added / − off); Record payment (it can renew the licence in the same step), Payments and Validity; Add days for a demo; Weight Calc is called Sales & Costing.",
-    "sha256": "6846e383d4a268cdc7b5b208730bbc702db99c18c5a69ba1503648aa0e22ee2f",
-    "sizeBytes": 12077762,
-    "publishedAt": "2026-10-08T10:39:29Z"
+    "versionCode": 23,
+    "versionName": "2.0.1",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.0.1-23.apk",
+    "notes": "Fabric Stock’s own plans and features: a Features tab on the customer’s Fabric Stock tab (+ added / − off, Back to the plan only), a plan chooser in Edit, Fabric Stock plans under Software & plans, ± changes on every row.",
+    "sha256": "e70e434e1fdf89170ca80dd8a6cac31ece6460478bb795c7a3e454e6430733da",
+    "sizeBytes": 12084894,
+    "publishedAt": "2026-10-08T11:27:57Z"
 }

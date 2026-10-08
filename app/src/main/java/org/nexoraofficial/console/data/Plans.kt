@@ -16,6 +16,14 @@ import org.json.JSONObject
    Fabric Stock's own service has no plans yet — the service says so
    (supported:false), and the console shows its words.
 
+   2.0.1 — Fabric Stock's own service (0.8.1) has plans and features now,
+   in exactly the shape Sales & Costing's come in (supported:true, 16
+   features in the groups Production, Stock & dispatch, Reports, Company;
+   Standard built in with every feature on). Its groups are shown in the
+   order they come, as the web console shows them; an older Fabric Stock
+   service (supported:false) keeps the 2.0.0 behaviour — every company on
+   Standard, no Features tab.
+
    GET /admin/api/plans → {"software":[{id, name, short, ok, supported,
      features:[{id,label,group}], plans:[{code, name, note, priceFirst,
      priceRenewal, usersIncluded, extraUserPrice, features, active, sort,
@@ -39,9 +47,17 @@ val FEATURE_GROUP: Map<String, String> = mapOf(
     "chat" to "Company", "notes" to "Company", "activityLog" to "Company", "backup" to "Company", "mobile" to "Company"
 )
 
-/** The groups present in [features], in the order they are shown. */
+/** The groups present in [features], in the order they are shown (Sales & Costing's order). */
 fun groupsOf(features: List<FeatureDef>): List<String> =
     features.map { it.group }.distinct().sortedBy { g -> FEATURE_GROUP_ORDER.indexOf(g).let { if (it < 0) 99 else it } }
+
+/**
+ * 2.0.1 — the groups of [sw]'s [features]: Sales & Costing's in the console's own order, any other
+ * software's in the order its service sends them (the web console's featBody does the same — Fabric
+ * Stock's "Company" would otherwise jump ahead of "Production").
+ */
+fun groupsOf(features: List<FeatureDef>, sw: String): List<String> =
+    if (sw == Software.WEIGHT) groupsOf(features) else features.map { it.group }.distinct()
 
 /** The fallback catalogue (Models.kt PLAN_FEATURES), grouped as the service groups it. */
 val FALLBACK_FEATURES: List<FeatureDef> = PLAN_FEATURES.map { FeatureDef(it.id, it.label, FEATURE_GROUP[it.id] ?: "Other") }
@@ -107,7 +123,7 @@ data class SoftwarePlans(
     val short: String,
     /** false when the service could not reach that software. */
     val ok: Boolean,
-    /** false when that software has no plans of its own yet (Fabric Stock, for now). */
+    /** false when that software has no plans of its own yet (Fabric Stock before its 0.8.1 service). */
     val supported: Boolean,
     val error: String?,
     val message: String?,
@@ -115,7 +131,7 @@ data class SoftwarePlans(
     val plans: List<Plan>,
     val demo: String?
 ) {
-    val groups: List<String> get() = groupsOf(features)
+    val groups: List<String> get() = groupsOf(features, id)
 
     /** The plans offered to a new customer. */
     val livePlans: List<Plan> get() = plans.filter { it.active }
@@ -139,7 +155,10 @@ data class SoftwarePlans(
             val features = if (fa == null) emptyList() else (0 until fa.length()).mapNotNull { i ->
                 fa.optJSONObject(i)?.let { f ->
                     val fid = f.str("id") ?: return@let null
-                    FeatureDef(fid, f.str("label") ?: fid, f.str("group") ?: FEATURE_GROUP[fid] ?: "Other")
+                    /* a feature sent without its group: Sales & Costing's own grouping; any other software's
+                       ids mean something else, so they go under "Features" (the web console's fallback) */
+                    val group = f.str("group") ?: if (id == Software.WEIGHT) FEATURE_GROUP[fid] ?: "Other" else "Features"
+                    FeatureDef(fid, f.str("label") ?: fid, group)
                 }
             }
             val pa: JSONArray? = o.optJSONArray("plans")
@@ -195,10 +214,14 @@ object Plans {
         return c.first().uppercaseChar() + c.drop(1).lowercase().replace('_', ' ')
     }
 
-    /** A company's plan by its name: the plan when [data] has it, else its code in words (Sales & Costing default Pro, Fabric Stock Standard). */
-    fun nameOf(data: PlansData?, sw: String, code: String?): String {
+    /**
+     * A company's plan by its name: the plan when [data] has it, else the name the company itself came
+     * with ([fallback] — Fabric Stock's companies carry "planName" since its 0.8.1 service), else its code
+     * in words (Sales & Costing default Pro, Fabric Stock Standard).
+     */
+    fun nameOf(data: PlansData?, sw: String, code: String?, fallback: String? = null): String {
         val c = code?.takeIf { it.isNotBlank() } ?: if (sw == Software.FABRIC) "STANDARD" else "PRO"
-        return data?.plan(sw, c)?.name ?: wordOf(c.uppercase())
+        return data?.plan(sw, c)?.name ?: fallback?.takeIf { it.isNotBlank() } ?: wordOf(c.uppercase())
     }
 
     /**
@@ -221,6 +244,17 @@ object Plans {
         settings.planFeatures[c]?.let { return it }
         return if (c == "PRO") PLAN_FEATURES.associate { it.id to true } else emptyMap()
     }
+
+    /**
+     * 2.0.1 — what a plan of [sw] gives, by code: Sales & Costing's as [ticks] reads them; any other
+     * software's from its own plans only (no plan in hand — an older service — gives nothing to show).
+     */
+    fun ticksOf(data: PlansData?, settings: ServiceSettings, sw: String, code: String?): Map<String, Boolean> =
+        if (sw == Software.WEIGHT) ticks(data, settings, code)
+        else data?.plan(sw, code?.takeIf { it.isNotBlank() } ?: "STANDARD")?.features.orEmpty()
+
+    /** 2.0.1 — whether [sw]'s service sent plans of its own the console can show and change. */
+    fun supported(data: PlansData?, sw: String): Boolean = data?.block(sw)?.supported == true
 }
 
 /* ---- money ---- */

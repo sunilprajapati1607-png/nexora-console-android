@@ -85,7 +85,12 @@ data class FabricCompany(
     /** The Weight Calc company it belongs to, or null: Fabric Stock only. */
     val companyId: Int?,
     /** "gstin" (the service matched the GSTIN), "hand" (the owner linked them), or null. */
-    val linkedBy: String?
+    val linkedBy: String?,
+    /* 2.0.1 — Fabric Stock 0.8.1 has plans and features: the plan's name as its service names it, and this
+       company's own changes over its plan ("+ added" true / "− off" false; a feature not named follows the
+       plan). Null and empty from an older Fabric Stock service. */
+    val planName: String? = null,
+    val featureOverrides: Map<String, Boolean> = emptyMap()
 ) {
     val linked: Boolean get() = companyId != null
 
@@ -149,7 +154,7 @@ data class FabricCompany(
                 isDemo = o.bool("isDemo"),
                 seats = o.int("seats", 1),
                 graceDays = o.int("graceDays"),
-                plan = o.str("plan"),
+                plan = o.str("plan")?.uppercase(),
                 expiresAt = expiresAt,
                 periodStartedAt = started,
                 selfRegistered = o.bool("selfRegistered"),
@@ -164,7 +169,10 @@ data class FabricCompany(
                 shownState = o.str("shownState") ?: if (expired && state != "SUSPENDED") "EXPIRED" else state,
                 endingSoon = o.bool("endingSoon"),
                 companyId = o.str("companyId")?.trim()?.toIntOrNull()?.takeIf { it > 0 },
-                linkedBy = o.str("linkedBy")?.lowercase()
+                linkedBy = o.str("linkedBy")?.lowercase(),
+                planName = o.str("planName"),
+                /* an object of on/off, or that object as text; null or anything else is none */
+                featureOverrides = Company.overridesOf(o.opt("featureOverrides") ?: o.opt("feature_overrides"))
             )
         }
 

@@ -84,8 +84,10 @@ class Deleted4720Test {
         val asked = CopyOnWriteArrayList<String>()
         @Volatile var sent: JSONObject? = null
         fun after(first: String, then: String): Boolean {
-            val i = asked.indexOf(first)
-            return i >= 0 && asked.subList(i + 1, asked.size).contains(then)
+            /* a copy first: the stand-in's thread may still be adding while this reads */
+            val seen = asked.toList()
+            val i = seen.indexOf(first)
+            return i >= 0 && seen.subList(i + 1, seen.size).contains(then)
         }
     }
 

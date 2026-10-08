@@ -175,8 +175,9 @@ private fun SwCustomerRow(vm: ConsoleViewModel, x: Customer, sw: String, onOpen:
     val soon = s.live && s.left <= 30
     val w = x.w
     val f = x.f
-    val n = if (sw == Software.WEIGHT) w?.featureOverrides?.size ?: 0 else 0
-    val plan = vm.planName(sw, if (sw == Software.WEIGHT) w?.plan else f?.plan) + (if (n > 0) " ± $n" else "")
+    /* 2.0.1 — Fabric Stock's own changes over its plan show as "± n" too */
+    val plan = (if (sw == Software.WEIGHT) vm.planName(sw, w?.plan) else vm.planName(sw, f?.plan, f?.planName)) +
+        Customers.own(Customers.ownCount(x, sw))
     RecordRow(if (soon) c.warn else stateColour(s.state), onOpen) {
         RowTitle(x.name, right = if (s.live) "${s.left} d" else null, rightColor = if (soon) c.warn else c.text)
         x.gstin?.let { Small(it) }

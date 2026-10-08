@@ -427,8 +427,8 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     var planSoft by mutableStateOf<String?>(null)
     var planQuery by mutableStateOf("")
 
-    /** A plan's name by its code ("GOLD" → "Gold"), on [sw]. */
-    fun planName(sw: String, code: String?): String = Plans.nameOf(plans, sw, code)
+    /** A plan's name by its code ("GOLD" → "Gold"), on [sw]; [fallback] is the name the company itself came with. */
+    fun planName(sw: String, code: String?, fallback: String? = null): String = Plans.nameOf(plans, sw, code, fallback)
 
     /** Why [sw]'s plans cannot be shown — null while they can (or before they have been asked). */
     fun plansProblem(sw: String): String? {
@@ -921,7 +921,12 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 2.0.0 — Save on a Fabric Stock licence edited in its window: one update with what changed. */
+    /**
+     * 2.0.0 — Save on a Fabric Stock licence edited in its window: one update with what changed.
+     * 2.0.1 — the plan and the customer's own features go in the same update; a retired or unknown plan is
+     * refused in Fabric Stock's own sentence (shown, the window stays in Edit), and after a plan or features
+     * change the plans are read again so their customer counts follow.
+     */
     fun saveFabric(f: FabricCompany, e: FabricEdit, done: (Boolean) -> Unit = {}) {
         val body = Requests.fabricUpdate(f, e)
         if (body == null) {
@@ -929,21 +934,24 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             done(true)
             return
         }
+        val planOrFeatures = body.has("plan") || body.has("featureOverrides")
         viewModelScope.launch {
             busy = true
             var ok = true
             try {
+                /* a refusal (400 with its sentence) is thrown in the service's own words */
                 val r = api.fabric(body)
                 val warn = r.optString("warning")
                 say(warn.ifEmpty { "Saved." }, if (warn.isNotEmpty()) Msg.Kind.WARN else Msg.Kind.OK)
             } catch (ex: Exception) {
                 ok = false
-                say("Fabric Stock: " + ((ex as? ApiError)?.message ?: "something went wrong."), Msg.Kind.ERR)
+                say("Fabric Stock: " + ((ex as? ApiError)?.message ?: "something went wrong."), Msg.Kind.ERR, holdMs = 12_000)
             } finally {
                 busy = false
             }
             loadProducts()
             fabricOpen?.let { loadFabricDetail(it, quiet = true) }
+            if (ok && planOrFeatures) loadPlans()
             done(ok)
         }
     }

@@ -351,7 +351,8 @@ fun RecordPaymentScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingVal
                     ReadField(
                         "Plan",
                         if (x == null || lic == null) "—"
-                        else vm.planName(f.software, planCode) + " · " + Customers.stateWord(lic.state) + " · ends " + Fmt.day(lic.at)
+                        else vm.planName(f.software, planCode, if (f.software == Software.FABRIC) x.f?.planName else null) + " · " +
+                            Customers.stateWord(lic.state) + " · ends " + Fmt.day(lic.at)
                     )
                     Spacer(Modifier.height(10.dp))
                     val demo = lic?.state == "DEMO"

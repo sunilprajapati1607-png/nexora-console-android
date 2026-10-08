@@ -108,12 +108,15 @@ class ScreenshotsTest {
 
     private fun fabricCo(
         id: Int, name: String, state: String, days: Int, companyId: String?, linkedBy: String?,
-        people: Int, seats: Int, devices: Int, self: Boolean = false, gstin: String? = null
+        people: Int, seats: Int, devices: Int, self: Boolean = false, gstin: String? = null,
+        /* 2.0.1 — what Fabric Stock 0.8.1 adds to a company: its plan's name and its own features over the plan */
+        plan: String = "STANDARD", planName: String? = null, overrides: JSONObject? = null
     ) = JSONObject()
         .put("id", id).put("name", name).put("licenceKey", "NFS-%04d-T6WD".format(id)).put("loginId", if (id == 1) "riverside-fs" else JSONObject.NULL)
         .put("email", JSONObject.NULL).put("phone", JSONObject.NULL)
         .put("gstin", gstin ?: JSONObject.NULL).put("state", state).put("isDemo", state == "DEMO").put("seats", seats)
-        .put("graceDays", if (state == "DEMO") 0 else 3).put("plan", "STANDARD")
+        .put("graceDays", if (state == "DEMO") 0 else 3).put("plan", plan)
+        .apply { planName?.let { put("planName", it).put("featureOverrides", overrides ?: JSONObject.NULL) } }
         .put("expiresAt", java.time.Instant.parse("2026-10-08T18:29:59Z").plus(java.time.Duration.ofDays(days.toLong())).toString())
         .put("periodStartedAt", if (state == "DEMO") "2026-10-06T00:00:00.000Z" else "2026-02-05T00:00:00.000Z")
         .put("selfRegistered", self).put("notes", JSONObject.NULL).put("createdAt", "2026-10-06T05:00:00.000Z")
@@ -159,6 +162,52 @@ class ScreenshotsTest {
         .put(JSONObject().put("id", "fabric").put("name", "Nexora Loom & Fabric Stock").put("short", "Fabric Stock").put("ok", true)
             .put("supported", false).put("features", JSONArray()).put("plans", JSONArray())
             .put("message", "Fabric Stock’s own service has no plans yet. They are made there first (in its own window); until then every Fabric Stock company is on Standard.")))
+
+    /* 2.0.1 — Fabric Stock 0.8.1's own plans and features: its 16 features in its four groups (as its rules.js
+       lists them), Standard built in with every feature on, a Basic the owner made, and one retired */
+    private val fabricFeatureList = listOf(
+        Triple("loomReading", "Loom Reading", "Production"), Triple("rollCutting", "Roll Cutting & Weighing (scales)", "Production"),
+        Triple("efficiency", "Loom efficiency & stop reasons", "Production"),
+        Triple("stock", "Fabric Stock & traceability", "Stock & dispatch"), Triple("packing", "Packing List", "Stock & dispatch"),
+        Triple("dispatch", "Dispatch & Returns", "Stock & dispatch"), Triple("labels", "Thermal roll labels", "Stock & dispatch"),
+        Triple("reports", "Shift report & Daily Stock Sheet", "Reports"), Triple("operatorPerf", "Operator Performance", "Reports"),
+        Triple("ai", "Nexora AI", "Company"), Triple("mobile", "Fabric Stock phone app", "Company"),
+        Triple("chatNotes", "Company chat & notes", "Company"), Triple("exportExcel", "Export to Excel", "Company"),
+        Triple("printPdf", "Print & PDF", "Company"), Triple("activityLog", "Activity log", "Company"), Triple("backup", "Backup", "Company")
+    )
+
+    private fun fabricTicks(vararg off: String) = JSONObject().apply { fabricFeatureList.forEach { put(it.first, it.first !in off) } }
+
+    private val plansWithFabric = JSONObject(plans.toString()).apply {
+        getJSONArray("software").put(1, JSONObject().put("id", "fabric").put("name", "Nexora Loom & Fabric Stock").put("short", "Fabric Stock")
+            .put("ok", true).put("supported", true).put("demo", "A demo has every feature, whatever its plan.")
+            .put("features", JSONArray().apply { fabricFeatureList.forEach { (id, label, g) -> put(JSONObject().put("id", id).put("label", label).put("group", g)) } })
+            .put("plans", JSONArray()
+                .put(JSONObject().put("code", "STANDARD").put("name", "Standard").put("note", "everything in Fabric Stock")
+                    .put("priceFirst", 25000).put("priceRenewal", 12000).put("usersIncluded", 3).put("extraUserPrice", 1500)
+                    .put("features", fabricTicks()).put("active", true).put("sort", 10).put("customers", 1).put("changed", 1).put("builtIn", true))
+                .put(JSONObject().put("code", "BASIC").put("name", "Basic").put("note", "loom reading, stock and dispatch")
+                    .put("priceFirst", 15000).put("priceRenewal", 8000).put("usersIncluded", 3).put("extraUserPrice", JSONObject.NULL)
+                    .put("features", fabricTicks("efficiency", "labels", "operatorPerf", "ai", "mobile"))
+                    .put("active", true).put("sort", 20).put("customers", 1).put("changed", 1).put("builtIn", false))
+                .put(JSONObject().put("code", "LOOM_ONLY").put("name", "Loom only").put("note", "the 2025 trial offer")
+                    .put("priceFirst", JSONObject.NULL).put("priceRenewal", JSONObject.NULL).put("usersIncluded", JSONObject.NULL).put("extraUserPrice", JSONObject.NULL)
+                    .put("features", fabricTicks(*fabricFeatureList.map { it.first }.filter { it != "loomReading" && it != "reports" }.toTypedArray()))
+                    .put("active", false).put("sort", 30).put("customers", 0).put("changed", 0).put("builtIn", false))))
+    }
+
+    /* the same four Fabric Stock companies, from its 0.8.1 service: Shree on Basic with a label printer added and PDF off,
+       Vijay on Standard with Backup off */
+    private val softwareFabricPlans = JSONObject().put("products", JSONArray()
+        .put(JSONObject("""{"id":"weight","name":"Nexora Bag Weight Calculation","short":"Sales & Costing","ok":true}"""))
+        .put(JSONObject().put("id", "fabric").put("name", "Nexora Loom & Fabric Stock").put("short", "Fabric Stock").put("ok", true)
+            .put("companies", JSONArray()
+                .put(fabricCo(1, "Riverside Sacks Pvt Ltd", "DEMO", 5, "3", "gstin", 3, 3, 3, gstin = "24ABCDE1234F1Z5", planName = "Standard"))
+                .put(fabricCo(2, "Vijay Woven Bags", "LICENSED", 21, "7", "gstin", 4, 4, 2, gstin = "24VIJAY5678K1Z2", planName = "Standard",
+                    overrides = JSONObject().put("backup", false)))
+                .put(fabricCo(4, "Shree Loom Works", "LICENSED", 120, null, null, 6, 6, 4, gstin = "24SHREE1111L1Z3", plan = "BASIC", planName = "Basic",
+                    overrides = JSONObject().put("labels", true).put("printPdf", false)))
+                .put(fabricCo(5, "Mahalaxmi Tex", "DEMO", 2, null, null, 1, 3, 1, self = true, planName = "Standard")))))
 
     private fun pay(id: Int, sw: String, co: Int?, fab: Int?, customer: String, plan: String, planName: String, kind: String,
                     amount: Int, paid: String, mode: String, ref: String, from: String?, to: String?) = JSONObject()
@@ -222,13 +271,13 @@ class ScreenshotsTest {
     /** A signed-in console drawn from the made-up listing, with — unless told otherwise — the other software, the plans and the payments. */
     private fun signedIn(
         data: JSONObject = sample, dark: Boolean = false, products: JSONObject? = software,
-        withPlans: Boolean = true, withPayments: Boolean = true
+        withPlans: Boolean = true, withPayments: Boolean = true, plansData: JSONObject = plans
     ): ConsoleViewModel {
         val vm = vm(dark)
         vm.signedIn = true
         vm.data = ConsoleData.from(data)
         products?.let { vm.products = ProductsData.from(it); vm.productsLoad = Load.READY }
-        if (withPlans) { vm.plans = PlansData.from(plans); vm.plansLoad = Load.READY }
+        if (withPlans) { vm.plans = PlansData.from(plansData); vm.plansLoad = Load.READY }
         if (withPayments) { vm.payments = PaymentsData.from(payments); vm.paymentsLoad = Load.READY }
         rule.runOnIdle { vm.lock.unlocked() }
         rule.setContent { NexoraTheme(dark = vm.dark) { AppScaffold(vm) } }
@@ -492,6 +541,76 @@ class ScreenshotsTest {
         tap("Link An Existing Fabric Stock Company")
         tap("Mahalaxmi Tex")
         com.github.takahirom.roborazzi.captureScreenRoboImage(out.resolve("32-link-existing-fabric-company.png").path)
+    }
+
+    /* ---------------------------------------------------------------- 2.0.1: Fabric Stock's own plans and features */
+
+    private fun openShree(vm: ConsoleViewModel, listShot: String? = null) {
+        tap("Customers"); scrollTo("Shree Loom Works")
+        listShot?.let { shot(it) }    /* the rows: "Fabric Stock · Basic ± 2 · 120 days" */
+        tap("Shree Loom Works")
+        /* its Fabric Stock company read on its own (people and devices): none here, the window draws from the list */
+        afterRead({ vm.fabricDetailBusy }) { vm.fabricDetailError = null }
+    }
+
+    @Test
+    fun aCustomersFabricStockFeatures() {
+        val vm = signedIn(products = softwareFabricPlans, plansData = plansWithFabric)
+        openShree(vm, listShot = "15-customers-fabric-plan-rows")
+        tap("Features"); shot("33-customer-fabric-features")
+        scrollTo("Backup"); shot("33-customer-fabric-features-list")
+        tapInPage("Edit")
+        scrollTo("Nexora AI"); tap("Nexora AI")
+        shot("34-customer-fabric-features-edit")
+        scrollTo("Back to the plan only"); shot("34-customer-fabric-features-edit-summary")
+    }
+
+    @Test
+    fun aCustomersFabricStockFeaturesDark() {
+        val vm = signedIn(dark = true, products = softwareFabricPlans, plansData = plansWithFabric)
+        openShree(vm)
+        tap("Features"); scrollTo("Thermal roll labels"); shot("33-customer-fabric-features-dark")
+    }
+
+    @Test
+    fun aCustomersFabricStockPlanChooser() {
+        val vm = signedIn(products = softwareFabricPlans, plansData = plansWithFabric)
+        openShree(vm)
+        shot("35-customer-fabric-licence-plan")
+        tap("Plan")      /* the tool (first in the window): the Licence in Edit, brought into view */
+        shot("36-customer-fabric-licence-edit-plan")
+        tap("Standard")  /* another plan chosen; nothing is sent until Save */
+        scrollTo("Save sends them"); shot("36-customer-fabric-licence-edit-lower")
+        scrollTo("made under Software & plans"); shot("35-customer-fabric-licence-figures")
+    }
+
+    @Test
+    fun thePlansWithFabricStock() {
+        val vm = signedIn(products = softwareFabricPlans, plansData = plansWithFabric)
+        tap("Plans"); shot("55-plans-with-fabric-stock")
+        rule.runOnIdle { vm.planSoft = Software.FABRIC }
+        rule.waitForIdle()
+        scrollTo("Loom only"); shot("55-plans-fabric-stock-rows")
+        tap("Basic"); shot("56-fabric-plan")
+        scrollTo("Backup"); shot("56-fabric-plan-features")
+        tapInPage("Customers"); shot("56-fabric-plan-customers")
+    }
+
+    @Test
+    fun aNewFabricStockPlan() {
+        signedIn(products = softwareFabricPlans, plansData = plansWithFabric)
+        tap("Plans"); tap("+ New Fabric Stock plan")
+        tap("Basic")     /* start from Basic's ticks */
+        shot("57-new-fabric-plan")
+    }
+
+    @Test
+    fun bySoftwareFabricStockPlans() {
+        val vm = signedIn(products = softwareFabricPlans, plansData = plansWithFabric)
+        openMenu(); tapDrawer("Fabric Stock")
+        scrollTo("Shree Loom Works"); shot("65-by-software-fabric-stock-rows-with-plans")
+        rule.runOnIdle { vm.setSwView(Software.FABRIC, vm.swView(Software.FABRIC).copy(tab = "plans")) }
+        rule.waitForIdle(); scrollTo("Loom only"); shot("65-by-software-fabric-stock-plans")
     }
 
     /* ---------------------------------------------------------------- validity, payments */

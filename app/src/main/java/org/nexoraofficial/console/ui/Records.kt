@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.nexoraofficial.console.data.Fmt
@@ -177,7 +178,14 @@ fun FigTile(f: Fig, modifier: Modifier = Modifier) {
             Column(Modifier.fillMaxWidth().padding(start = 13.dp, end = 10.dp, top = 12.dp, bottom = 11.dp)) {
                 Text(f.label, color = ink, fontSize = 12.5f.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(2.dp))
-                Text(f.value, color = c.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                /* 2.0.1 — a value in words ("Fabric Stock only") is drawn smaller and may take two lines, as the web
+                   console draws them (16px); at the figures' size it was cut to "Fabric Stock …" in a half-width tile */
+                val words = f.value.length > 11
+                Text(
+                    f.value, color = c.text, fontSize = if (words) 16.sp else 22.sp, lineHeight = if (words) 19.sp else TextUnit.Unspecified,
+                    fontWeight = FontWeight.Bold, maxLines = if (words) 2 else 1, overflow = TextOverflow.Ellipsis,
+                    modifier = if (words) Modifier.padding(top = 3.dp, bottom = 2.dp) else Modifier
+                )
                 Text(f.line, color = c.muted, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Box(Modifier.matchParentSize()) {

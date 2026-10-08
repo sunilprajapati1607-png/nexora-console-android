@@ -44,6 +44,7 @@ import org.nexoraofficial.console.data.Money
 import org.nexoraofficial.console.data.Plan
 import org.nexoraofficial.console.data.PlanForm
 import org.nexoraofficial.console.data.Plans
+import org.nexoraofficial.console.data.Requests
 import org.nexoraofficial.console.data.Software
 import org.nexoraofficial.console.data.groupsOf
 import org.nexoraofficial.console.ui.theme.LocalNexora
@@ -57,6 +58,11 @@ import org.nexoraofficial.console.ui.theme.LocalNexora
    ticks. Standard and Pro can be retired, never deleted; a plan with
    customers on it cannot be deleted either. Fabric Stock has no plans of
    its own yet, and the service says so in its own words.
+
+   2.0.1 — Fabric Stock's own service (0.8.1) has plans: they are listed,
+   opened, made, edited, retired and deleted here exactly as Sales &
+   Costing's (POST /admin/api/plans with "software":"fabric"); its
+   features are grouped in the order its service sends them.
    ====================================================================== */
 
 @Composable
@@ -103,6 +109,7 @@ fun PlansScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, pag
         item(key = "figs") {
             Box(page) {
                 val wPlans = data?.plansOf(Software.WEIGHT).orEmpty()
+                val fPlans = data?.plansOf(Software.FABRIC).orEmpty()
                 FigGrid(
                     listOf(
                         Fig(Software.WEIGHT_NAME, if (wb != null) "${wPlans.size} plans" else "—",
@@ -112,12 +119,13 @@ fun PlansScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, pag
                         Fig(Software.FABRIC_NAME, if (fb?.supported == true) "${fb.plans.size} plans" else "—",
                             when {
                                 fb == null -> if (vm.plansLoad == Load.FAILED) "not read" else "reading…"
-                                fb.supported -> "${fb.features.size} features"
+                                fb.supported -> "${fb.features.size} features · ${fPlans.sumOf { it.customers }} paying customers"
                                 fb.ok -> "no plans in its service yet"
                                 else -> "not connected"
                             }, 1) { vm.planSoft = Software.FABRIC },
                         Fig(Software.JOBWORK_NAME, "—", "joins when it has a licence", 2),
-                        Fig("Customer changes", wPlans.sumOf { it.changed }.toString(), "customers with a feature added or off", 3)
+                        /* 2.0.1 — every software's: Fabric Stock's customers have features of their own too */
+                        Fig("Customer changes", (wPlans + fPlans).sumOf { it.changed }.toString(), "customers with a feature added or off", 3)
                     )
                 )
             }
@@ -245,9 +253,10 @@ private fun PlanBody(
     }
     BackHandler(enabled = editing) { nav.requestBack() }
 
+    /* the paying customers on it — a demo has every feature whatever its plan, and neither service counts it */
     val onIt = if (p == null) emptyList() else vm.customers.filter { x ->
         if (sw == Software.WEIGHT) x.w != null && !x.w.isDemo && x.w.plan.uppercase() == p.code
-        else x.f != null && (x.f.plan ?: "STANDARD").uppercase() == p.code
+        else x.f != null && !x.f.isDemo && Requests.fabricPlan(x.f) == p.code
     }
 
     val save = {
@@ -312,7 +321,8 @@ private fun PlanBody(
                         ConsoleField("Plan name", form.name, { form = form.copy(name = it.take(40)) })
                         Spacer(Modifier.height(8.dp))
                         ConsoleField("Gives (a few words)", form.note, { form = form.copy(note = it.take(120)) },
-                            placeholder = "e.g. calculation, quotation and the cost tools")
+                            placeholder = if (sw == Software.FABRIC) "e.g. loom reading, stock and dispatch"
+                                          else "e.g. calculation, quotation and the cost tools")
                         Spacer(Modifier.height(8.dp))
                         val money = { s: String -> s.filter { ch -> ch.isDigit() || ch == '.' } }
                         FieldPair(
@@ -384,7 +394,7 @@ private fun PlanBody(
                         Small((if (editing) "Tap to tick or untick. " else "") +
                             "A tick changes every customer on this plan at their next check; a customer's own additions and removals stay.")
                         Spacer(Modifier.height(10.dp))
-                        groupsOf(catalogue).forEachIndexed { gi, g ->
+                        groupsOf(catalogue, sw).forEachIndexed { gi, g ->
                             if (gi > 0) Spacer(Modifier.height(12.dp))
                             Text(g.uppercase(), color = c.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
                             Spacer(Modifier.height(6.dp))
@@ -406,7 +416,7 @@ private fun PlanBody(
                             if (i > 0) DashedRule(Modifier.padding(vertical = 8.dp))
                             val st = if (sw == Software.WEIGHT) x.w!!.swState else x.f!!.shownState
                             val ends = if (sw == Software.WEIGHT) x.w!!.expiresAt else x.f!!.expiresAt
-                            val own = if (sw == Software.WEIGHT) x.w!!.featureOverrides.size else 0
+                            val own = Customers.ownCount(x, sw)
                             Row(Modifier.fillMaxWidth().pressable { nav.open(Screen.CustomerWin(x.key, sw, "licence")) }.padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
                                 androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
