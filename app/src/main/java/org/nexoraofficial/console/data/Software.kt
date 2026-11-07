@@ -33,22 +33,61 @@ import java.time.Instant
 object Software {
     const val WEIGHT = "weight"
     const val FABRIC = "fabric"
+    const val ERP = "erp"
+    const val CONSULT = "consult"
     const val JOBWORK = "jobwork"
     const val WEIGHT_NAME = "Sales & Costing"
     const val FABRIC_NAME = "Fabric Stock"
+    const val ERP_NAME = "MSME ERP"
+    const val CONSULT_NAME = "Nexora Consult"
     const val JOBWORK_NAME = "Jobwork"
+    const val WEIGHT_FULL = "Nexora Bag Weight Calculation"
+
+    /**
+     * 2.1.0 — every software the console reaches through its service, as the service's products.js lists
+     * them: each keeps its own licences on its own server, and the console reads and acts on each the same
+     * way (GET /admin/api/products, POST /admin/api/<id>). Fabric Stock first, as it always was.
+     */
+    val REMOTES: List<RemoteSoftware> = listOf(
+        RemoteSoftware(FABRIC, FABRIC_NAME, "Nexora Loom & Fabric Stock", 'f', "F"),
+        RemoteSoftware(ERP, ERP_NAME, "Nexora MSME ERP", 'e', "E"),
+        RemoteSoftware(CONSULT, CONSULT_NAME, "Nexora Consult", 'c', "C")
+    )
+
+    val REMOTE_IDS: List<String> = REMOTES.map { it.id }
+
+    /** Every software that has licences, Sales & Costing first. */
+    val LICENSED: List<String> = listOf(WEIGHT) + REMOTE_IDS
+
+    fun isRemote(id: String?): Boolean = id in REMOTE_IDS
+
+    fun remote(id: String?): RemoteSoftware? = REMOTES.find { it.id == id }
+
+    /** The remote software whose customers' keys start with [c] ("f7", "e3", "c2"). */
+    fun byPrefix(c: Char?): RemoteSoftware? = REMOTES.find { it.prefix == c }
 
     /** The name a screen shows for a software id. */
     fun name(id: String?): String = when (id) {
         WEIGHT -> WEIGHT_NAME
-        FABRIC -> FABRIC_NAME
         JOBWORK -> JOBWORK_NAME
-        else -> id ?: "-"
+        else -> remote(id)?.name ?: id ?: "-"
+    }
+
+    /** "Nexora Bag Weight Calculation", "Nexora Loom & Fabric Stock", "Nexora MSME ERP", "Nexora Consult". */
+    fun fullName(id: String?): String = when (id) {
+        WEIGHT -> WEIGHT_FULL
+        else -> remote(id)?.fullName ?: name(id)
     }
 
     /** The other of the two that have licences. */
     fun other(id: String): String = if (id == FABRIC) WEIGHT else FABRIC
 }
+
+/** 2.1.0 — one software reached through the console service: its id, its names, and the letter its customers' keys start with. */
+data class RemoteSoftware(val id: String, val name: String, val fullName: String, val prefix: Char, val letter: String)
+
+/** 2.1.0 — a company of any software reached through the console service: they all come in Fabric Stock's shape. */
+typealias RemoteCompany = FabricCompany
 
 /**
  * A company on Nexora Loom & Fabric Stock — its own licence, apart from any
@@ -90,7 +129,9 @@ data class FabricCompany(
        company's own changes over its plan ("+ added" true / "− off" false; a feature not named follows the
        plan). Null and empty from an older Fabric Stock service. */
     val planName: String? = null,
-    val featureOverrides: Map<String, Boolean> = emptyMap()
+    val featureOverrides: Map<String, Boolean> = emptyMap(),
+    /** 2.1.0 — the software it is on (fabric, erp, consult): every one of them comes in this shape. */
+    val sw: String = Software.FABRIC
 ) {
     val linked: Boolean get() = companyId != null
 
@@ -129,7 +170,7 @@ data class FabricCompany(
     fun renewEnd(add: Int, now: Instant = Instant.now()): Instant = now.plus(Duration.ofDays(renewDays(add).toLong()))
 
     companion object {
-        fun from(o: JSONObject): FabricCompany {
+        fun from(o: JSONObject, sw: String = Software.FABRIC): FabricCompany {
             val state = o.str("state") ?: "DEMO"
             val expiresAt = o.str("expiresAt")
             val end = moment(expiresAt)
@@ -172,7 +213,8 @@ data class FabricCompany(
                 linkedBy = o.str("linkedBy")?.lowercase(),
                 planName = o.str("planName"),
                 /* an object of on/off, or that object as text; null or anything else is none */
-                featureOverrides = Company.overridesOf(o.opt("featureOverrides") ?: o.opt("feature_overrides"))
+                featureOverrides = Company.overridesOf(o.opt("featureOverrides") ?: o.opt("feature_overrides")),
+                sw = sw
             )
         }
 
@@ -299,7 +341,7 @@ data class FabricDetail(
     val devices: List<FabricDevice>
 ) {
     companion object {
-        fun from(o: JSONObject): FabricDetail {
+        fun from(o: JSONObject, sw: String = Software.FABRIC): FabricDetail {
             /* the company's own fields at the top, as the service sends them (or, from another
                build of it, under "company"); the people and the devices beside them */
             val co = o.optJSONObject("company") ?: o
@@ -307,7 +349,7 @@ data class FabricDetail(
                 val a = o.optJSONArray(k) ?: co.optJSONArray(k) ?: return emptyList()
                 return (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let(f) }
             }
-            return FabricDetail(FabricCompany.from(co), list("users") { FabricUser.from(it) }, list("devices") { FabricDevice.from(it) })
+            return FabricDetail(FabricCompany.from(co, sw), list("users") { FabricUser.from(it) }, list("devices") { FabricDevice.from(it) })
         }
     }
 }
@@ -325,27 +367,33 @@ data class Product(
     val message: String?,
     val companies: List<FabricCompany>
 ) {
-    /** What the owner is told when it is not reachable — the service's own words first. */
+    /** What the owner is told when it is not reachable — the service's own words first.
+     *  2.1.0 — any software's FABRIC_KEY / ERP_DOWN / CONSULT_KEY …, by the word after its name. */
     val problem: String
-        get() = message ?: when (error) {
-            "FABRIC_KEY" -> "The $short service did not accept the console's key."
-            "FABRIC_DOWN" -> "The $short service did not answer — it may still be waking up. Try again in a minute."
+        get() = message ?: when {
+            error?.endsWith("_KEY") == true -> "The $short service did not accept the console's key."
+            error?.endsWith("_DOWN") == true -> "The $short service did not answer — it may still be waking up. Try again in a minute."
             else -> "$short could not be reached."
         }
+
+    /** 2.1.0 — the console service has no key for it yet (FABRIC_KEY, CONSULT_KEY …): waiting will not help. */
+    val keyProblem: Boolean get() = error?.endsWith("_KEY") == true
 
     companion object {
         fun from(o: JSONObject): Product {
             val id = o.str("id") ?: ""
             val a = o.optJSONArray("companies")
+            /* 2.1.0 — every company carries the software it came from */
+            val sw = if (Software.isRemote(id)) id else Software.FABRIC
             return Product(
                 id = id,
                 name = o.str("name") ?: id,
-                short = o.str("short") ?: o.str("name") ?: id,
+                short = o.str("short") ?: o.str("name") ?: Software.name(id),
                 ok = o.optBoolean("ok", true),
                 error = o.str("error"),
                 message = o.str("message"),
                 companies = if (a == null) emptyList()
-                else (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { FabricCompany.from(it) } }
+                else (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { FabricCompany.from(it, sw) } }
             )
         }
     }
@@ -355,12 +403,137 @@ data class Product(
 data class ProductsData(val products: List<Product> = emptyList()) {
     val weight: Product? get() = products.find { it.id == Software.WEIGHT }
     val fabric: Product? get() = products.find { it.id == Software.FABRIC }
+    val erp: Product? get() = products.find { it.id == Software.ERP }
+    val consult: Product? get() = products.find { it.id == Software.CONSULT }
+
+    /** 2.1.0 — any one software by its id. */
+    fun of(sw: String): Product? = products.find { it.id == sw }
 
     companion object {
         fun from(o: JSONObject): ProductsData {
             val a = o.optJSONArray("products") ?: return ProductsData()
             return ProductsData((0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { Product.from(it) } })
         }
+    }
+}
+
+/* ---- 2.1.0: each software's own demo rules, kept on its own server ---- */
+
+/**
+ * One software's demo rules, as GET /admin/api/software-settings lists them: how long a demo runs, the
+ * offline days a demo has, its seats (a remote software only), whether a plant may sign itself up, and
+ * what happens when a licence ends. Each software keeps its own on its own server — never mixed.
+ */
+data class SoftwareRules(
+    val id: String,
+    val ok: Boolean,
+    val error: String? = null,
+    val message: String? = null,
+    val trialDays: Int? = null,
+    val demoGraceDays: Int? = null,
+    val demoSeats: Int? = null,
+    val signupsOpen: Boolean? = null,
+    /** READONLY or HARDSTOP. */
+    val expiredMode: String? = null
+) {
+    val name: String get() = Software.name(id)
+
+    /** Why they could not be read — the service's own words first. */
+    val problem: String
+        get() = message ?: when {
+            error?.endsWith("_KEY") == true -> "The $name service did not accept the console's key."
+            error?.endsWith("_DOWN") == true -> "The $name service did not answer — it may still be waking up. Try again in a minute."
+            error == "NOT_YET" -> "$name's own service has no demo rules yet."
+            else -> "$name's demo rules could not be read."
+        }
+
+    companion object {
+        fun from(o: JSONObject): SoftwareRules {
+            val s = o.optJSONObject("settings")
+            fun int(k: String): Int? = s?.takeIf { it.has(k) && !it.isNull(k) }?.let { x ->
+                when (val v = x.opt(k)) {
+                    is Number -> v.toInt()
+                    is String -> v.trim().toIntOrNull()
+                    else -> null
+                }
+            }
+            fun flag(k: String): Boolean? = s?.takeIf { it.has(k) && !it.isNull(k) }?.let { x ->
+                when (val v = x.opt(k)) {
+                    is Boolean -> v
+                    is Number -> v.toInt() != 0
+                    is String -> v.trim().lowercase() in setOf("true", "1", "yes", "open")
+                    else -> null
+                }
+            }
+            val err = o.str("error")
+            return SoftwareRules(
+                id = o.str("id") ?: "",
+                ok = o.optBoolean("ok", s != null && err == null) && s != null,
+                error = err,
+                message = o.str("message"),
+                trialDays = int("trialDays"),
+                demoGraceDays = int("demoGraceDays"),
+                demoSeats = if (o.str("id") == Software.WEIGHT) null else int("demoSeats"),
+                signupsOpen = flag("signupsOpen"),
+                expiredMode = s?.str("expiredMode")?.uppercase()
+            )
+        }
+    }
+}
+
+/** Everything GET /admin/api/software-settings answers with. */
+data class SoftwareRulesData(val software: List<SoftwareRules> = emptyList()) {
+    fun of(sw: String): SoftwareRules? = software.find { it.id == sw }
+
+    companion object {
+        fun from(o: JSONObject): SoftwareRulesData {
+            val a = o.optJSONArray("software") ?: return SoftwareRulesData()
+            return SoftwareRulesData((0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { SoftwareRules.from(it) } })
+        }
+    }
+}
+
+/** 2.1.0 — one software's demo rules while they are changed (text as typed). */
+data class RulesForm(
+    val trialDays: String,
+    val demoGraceDays: String,
+    val demoSeats: String,
+    val signupsOpen: Boolean,
+    val expiredMode: String
+) {
+    /** What is wrong with it for [sw], in the service's own words — null when it will do. */
+    fun problem(sw: String): String? {
+        val remote = Software.isRemote(sw)
+        val trial = trialDays.trim().toIntOrNull()
+        val grace = demoGraceDays.trim().toIntOrNull()
+        val trialMax = if (remote) 60 else 365
+        val graceMax = if (remote) 30 else 365
+        return when {
+            trial == null || trial < 1 || trial > trialMax -> "Demo days must be 1 to $trialMax."
+            grace == null || grace < 0 || grace > graceMax -> "Offline days for a demo must be 0 to $graceMax."
+            remote && demoSeats.trim().toIntOrNull().let { it == null || it < 1 || it > 50 } -> "Demo seats must be 1 to 50."
+            expiredMode !in setOf("READONLY", "HARDSTOP") -> "Choose what happens when a licence ends."
+            else -> null
+        }
+    }
+
+    /** POST /admin/api/software-settings, for this one software (demo seats only for a remote software). */
+    fun body(sw: String): JSONObject = JSONObject()
+        .put("software", sw)
+        .put("trialDays", trialDays.trim().toInt())
+        .put("demoGraceDays", demoGraceDays.trim().toInt())
+        .put("signupsOpen", signupsOpen)
+        .put("expiredMode", expiredMode)
+        .apply { if (Software.isRemote(sw)) put("demoSeats", demoSeats.trim().toInt()) }
+
+    companion object {
+        fun of(r: SoftwareRules) = RulesForm(
+            trialDays = (r.trialDays ?: 7).toString(),
+            demoGraceDays = (r.demoGraceDays ?: 0).toString(),
+            demoSeats = (r.demoSeats ?: 3).toString(),
+            signupsOpen = r.signupsOpen ?: true,
+            expiredMode = r.expiredMode?.takeIf { it == "READONLY" || it == "HARDSTOP" } ?: "READONLY"
+        )
     }
 }
 

@@ -1,9 +1,9 @@
 {
-    "versionCode": 23,
-    "versionName": "2.0.1",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.0.1-23.apk",
-    "notes": "Fabric Stock’s own plans and features: a Features tab on the customer’s Fabric Stock tab (+ added / − off, Back to the plan only), a plan chooser in Edit, Fabric Stock plans under Software & plans, ± changes on every row.",
-    "sha256": "e70e434e1fdf89170ca80dd8a6cac31ece6460478bb795c7a3e454e6430733da",
-    "sizeBytes": 12084894,
-    "publishedAt": "2026-10-08T11:27:57Z"
+    "versionCode": 24,
+    "versionName": "2.1.0",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.1.0-24.apk",
+    "notes": "Every Nexora software in the one console: MSME ERP and Nexora Consult beside Sales & Costing and Fabric Stock, each with its own licence, tab, screen, plans and payments. A customer is joined across all four by the console link or the same GSTIN. New: each software’s own demo rules (demo days, offline days, demo seats, sign-ups, when a licence ends) with Change.",
+    "sha256": "39572fc04cde86547ce551631f6c344ccd5c8d081bf869c37c99d2192eb1c46b",
+    "sizeBytes": 12122490,
+    "publishedAt": "2026-11-07T15:59:41Z"
 }

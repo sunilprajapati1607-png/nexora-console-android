@@ -131,32 +131,22 @@ fun DashboardScreen(
             Column(page.appear(2), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("By Software", style = MaterialTheme.typography.titleSmall, color = LocalNexora.current.muted, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(start = 4.dp))
-                val ws = all.mapNotNull { it.w?.swState }
-                val fs = all.mapNotNull { it.f?.shownState }
-                val n = { l: List<String>, s: String -> l.count { it == s } }
                 val month = vm.today().withDayOfMonth(1).toString()
                 val pays = vm.payments?.payments.orEmpty().filter { (it.paidOn ?: "") >= month }
+                /* 2.1.0 — every software side by side (Sales & Costing, Fabric Stock, MSME ERP, Nexora Consult), each its own licences */
                 FigGrid(
-                    listOf(
-                        Fig(Software.WEIGHT_NAME, ws.size.toString(),
-                            "${n(ws, "LICENSED")} licensed · ${n(ws, "DEMO")} demo · ${n(ws, "SUSPENDED")} suspended", 0) {
-                            nav.switchTo(Screen.BySoftware(Software.WEIGHT))
-                        },
-                        Fig(Software.FABRIC_NAME, if (vm.fabricReady) fs.size.toString() else "—",
-                            when {
-                                vm.fabricProblem != null -> "not connected"
-                                !vm.fabricReady -> "reading…"
-                                else -> "${n(fs, "LICENSED")} licensed · ${n(fs, "DEMO")} demo · ${n(fs, "SUSPENDED")} suspended"
-                            }, 1) { nav.switchTo(Screen.BySoftware(Software.FABRIC)) },
-                        Fig("Received this month", Money.rupees(pays.sumOf { it.amount ?: 0.0 }),
-                            "${pays.size} payment" + (if (pays.size == 1) "" else "s"), 2) {
-                            vm.payQuick = PayQuick.MONTH; nav.switchTo(Screen.Payments)
-                        },
-                        Fig("Plans", (vm.plans?.all?.size ?: 0).toString(),
-                            "${vm.plans?.plansOf(Software.WEIGHT)?.size ?: 0} Sales & Costing · ${vm.plans?.plansOf(Software.FABRIC)?.size ?: 0} Fabric Stock", 3) {
-                            nav.switchTo(Screen.Plans)
-                        }
-                    )
+                    sideBySide(vm).mapIndexed { i, sw -> softwareFig(vm, all, sw, i % 2) { nav.switchTo(Screen.BySoftware(sw)) } } +
+                        listOf(
+                            Fig("Received this month", Money.rupees(pays.sumOf { it.amount ?: 0.0 }),
+                                "${pays.size} payment" + (if (pays.size == 1) "" else "s"), 2) {
+                                vm.payQuick = PayQuick.MONTH; nav.switchTo(Screen.Payments)
+                            },
+                            Fig("Plans", (vm.plans?.all?.size ?: 0).toString(),
+                                Software.LICENSED.filter { it == Software.WEIGHT || vm.plans?.block(it)?.supported == true }
+                                    .joinToString(" · ") { "${vm.plans?.plansOf(it)?.size ?: 0} ${Software.name(it)}" }, 3) {
+                                nav.switchTo(Screen.Plans)
+                            }
+                        )
                 )
             }
         }

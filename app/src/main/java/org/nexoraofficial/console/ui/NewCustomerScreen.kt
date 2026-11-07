@@ -50,8 +50,6 @@ import org.nexoraofficial.console.ui.theme.LocalNexora
 fun NewCustomerScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, page: Modifier) {
     val f = vm.newCustomer
     val wPlans = vm.plans?.weight?.livePlans.orEmpty()
-    val fb = vm.plans?.fabric
-    val fOk = vm.fabricReady
     val save = { vm.createCustomer { key -> if (key != null) nav.replace(Screen.CustomerWin(key)) } }
 
     LazyColumn(
@@ -121,34 +119,45 @@ fun NewCustomerScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValue
                         }
                     }
 
-                    Spacer(Modifier.height(10.dp))
-                    SoftwareChoice(Software.FABRIC, Software.FABRIC_NAME, f.fabric && fOk, fOk, { vm.newCustomer = f.copy(fabric = it) }) {
-                        if (fb?.supported == true && fb.livePlans.isNotEmpty()) {
-                            ChoiceField("Plan", fb.livePlans.map { it.code to it.name }, f.fabricPlan ?: fb.livePlans.first().code) {
-                                vm.newCustomer = f.copy(fabricPlan = it)
-                            }
-                        } else ReadField("Plan", "Standard", sub = "Fabric Stock has no plans of its own yet")
-                        Spacer(Modifier.height(8.dp))
-                        ChoiceField("Start as", listOf("DEMO" to "Demo", "LICENSED" to "Licensed"), f.fabricState) { s ->
-                            vm.newCustomer = f.copy(
-                                fabricState = s,
-                                fabricDays = when {
-                                    s == "LICENSED" && f.fabricDays == "7" -> "365"
-                                    s == "DEMO" && f.fabricDays == "365" -> "7"
-                                    else -> f.fabricDays
+                    /* 2.1.0 — every remote software the same way: Fabric Stock, MSME ERP, Nexora Consult — each its own key */
+                    Software.REMOTE_IDS.forEach { sw ->
+                        val n = Software.name(sw)
+                        val b = vm.plans?.block(sw)
+                        val ok = vm.remoteReady(sw)
+                        val r = f.remote(sw)
+                        val demoDays = vm.demoDays(sw).toString()
+                        val set = { nr: org.nexoraofficial.console.data.RemoteStart -> vm.newCustomer = f.withRemote(sw, nr) }
+                        Spacer(Modifier.height(10.dp))
+                        SoftwareChoice(sw, n, r.on && ok, ok, { set(r.copy(on = it)) }) {
+                            if (b?.supported == true && b.livePlans.isNotEmpty()) {
+                                ChoiceField("Plan", b.livePlans.map { it.code to it.name }, r.plan ?: b.livePlans.first().code) {
+                                    set(r.copy(plan = it))
                                 }
-                            )
+                            } else ReadField("Plan", "Standard", sub = "$n has no plans of its own yet")
+                            Spacer(Modifier.height(8.dp))
+                            ChoiceField("Start as", listOf("DEMO" to "Demo", "LICENSED" to "Licensed"), r.state) { s ->
+                                set(
+                                    r.copy(
+                                        state = s,
+                                        days = when {
+                                            s == "LICENSED" && (r.days == "7" || r.days == demoDays) -> "365"
+                                            s == "DEMO" && r.days == "365" -> demoDays
+                                            else -> r.days
+                                        }
+                                    )
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ConsoleField("Days", r.days, { set(r.copy(days = it.filter(Char::isDigit))) }, Modifier.weight(1f), numeric = true)
+                                ConsoleField("Users", r.seats, { set(r.copy(seats = it.filter(Char::isDigit))) }, Modifier.weight(1f), numeric = true)
+                                ConsoleField("Offline", r.grace, { set(r.copy(grace = it.filter(Char::isDigit))) }, Modifier.weight(1f), numeric = true)
+                            }
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ConsoleField("Days", f.fabricDays, { vm.newCustomer = f.copy(fabricDays = it.filter(Char::isDigit)) }, Modifier.weight(1f), numeric = true)
-                            ConsoleField("Users", f.fabricSeats, { vm.newCustomer = f.copy(fabricSeats = it.filter(Char::isDigit)) }, Modifier.weight(1f), numeric = true)
-                            ConsoleField("Offline", f.fabricGrace, { vm.newCustomer = f.copy(fabricGrace = it.filter(Char::isDigit)) }, Modifier.weight(1f), numeric = true)
+                        if (!ok) {
+                            Spacer(Modifier.height(6.dp))
+                            MessageStrip(Msg("$n is not connected" + (vm.remoteProblem(sw)?.let { ": $it" } ?: " yet."), Msg.Kind.WARN), onDismiss = {})
                         }
-                    }
-                    if (!fOk) {
-                        Spacer(Modifier.height(6.dp))
-                        MessageStrip(Msg("Fabric Stock is not connected" + (vm.fabricProblem?.let { ": $it" } ?: " yet."), Msg.Kind.WARN), onDismiss = {})
                     }
 
                     Spacer(Modifier.height(10.dp))

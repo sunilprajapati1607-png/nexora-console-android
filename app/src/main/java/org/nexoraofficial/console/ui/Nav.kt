@@ -75,7 +75,7 @@ sealed interface Screen {
     /** 2.0.0 — one software on its own: its customers, its plans, its payments. */
     data class BySoftware(val sw: String) : Root {
         override val title: String get() = Software.name(sw)
-        override val icon: ImageVector get() = if (sw == Software.FABRIC) Icons.Outlined.Inventory2 else Icons.Outlined.Scale
+        override val icon: ImageVector get() = SwColours.icon(sw)
     }
 
     data object Enquiries : Root {

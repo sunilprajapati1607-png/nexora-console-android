@@ -24,8 +24,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.FactCheck
+import androidx.compose.material.icons.outlined.Factory
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Scale
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
@@ -70,11 +75,33 @@ object SwColours {
     val SALES = listOf(Color(0xFF3366FF), Color(0xFF6A8CFF))
     val FABRIC = listOf(Color(0xFF10A37F), Color(0xFF2CC6B0))
     val JOBWORK = listOf(Color(0xFFF08A0C), Color(0xFFF7B538))
+    /* 2.1.0 — MSME ERP an indigo, Nexora Consult a rose: each its own, apart from the kinds' colours */
+    val ERP = listOf(Color(0xFF4F46E5), Color(0xFF818CF8))
+    val CONSULT = listOf(Color(0xFFDB2777), Color(0xFFF472B6))
 
     fun of(sw: String): List<Color> = when (sw) {
         Software.FABRIC -> FABRIC
+        Software.ERP -> ERP
+        Software.CONSULT -> CONSULT
         Software.JOBWORK -> JOBWORK
         else -> SALES
+    }
+
+    /** 2.1.0 — the software's own icon. */
+    fun icon(sw: String): ImageVector = when (sw) {
+        Software.FABRIC -> Icons.Outlined.Inventory2
+        Software.ERP -> Icons.Outlined.Factory
+        Software.CONSULT -> Icons.Outlined.FactCheck
+        Software.JOBWORK -> Icons.Outlined.Build
+        else -> Icons.Outlined.Scale
+    }
+
+    /** 2.1.0 — the software's kind for the coloured cards (Look.kt Kinds). */
+    fun kind(sw: String): String = when (sw) {
+        Software.FABRIC -> "fabric"
+        Software.ERP -> "erp"
+        Software.CONSULT -> "consult"
+        else -> "weight"
     }
 
     /** The software's colour as writing on the page: deeper on a light page, lighter on a dark one. */

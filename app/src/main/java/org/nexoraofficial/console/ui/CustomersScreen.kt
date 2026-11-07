@@ -29,6 +29,7 @@ import org.nexoraofficial.console.data.DeletedCompany
 import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.data.PlansData
 import org.nexoraofficial.console.data.Software
+import org.nexoraofficial.console.Msg
 import org.nexoraofficial.console.ui.theme.LocalNexora
 
 /* ======================================================================
@@ -127,28 +128,17 @@ fun CustomersScreen(
 
         item(key = "figs") {
             Box(page) {
-                val ws = all.mapNotNull { it.w?.swState }
-                val fs = all.mapNotNull { it.f?.shownState }
-                val n = { l: List<String>, s: String -> l.count { it == s } }
+                /* 2.1.0 — every software side by side, each its own licences */
                 FigGrid(
-                    listOf(
-                        Fig(Software.WEIGHT_NAME, ws.size.toString(),
-                            "${n(ws, "LICENSED")} licensed · ${n(ws, "DEMO")} demo · ${n(ws, "SUSPENDED")} suspended", 0) {
-                            nav.switchTo(Screen.BySoftware(Software.WEIGHT))
-                        },
-                        Fig(Software.FABRIC_NAME, if (vm.fabricReady) fs.size.toString() else "—",
-                            when {
-                                vm.fabricProblem != null -> "not connected"
-                                !vm.fabricReady -> "reading…"
-                                else -> "${n(fs, "LICENSED")} licensed · ${n(fs, "DEMO")} demo · ${n(fs, "SUSPENDED")} suspended"
-                            }, 1) { nav.switchTo(Screen.BySoftware(Software.FABRIC)) },
-                        Fig("Renew in 30 days", Customers.count(all, CustQuick.SOON).toString(), "a licence of theirs ends within 30 days", 2) {
-                            vm.companyView = CompanyView.ALL; vm.customerQuick = CustQuick.SOON
-                        },
-                        Fig("Using both", Customers.count(all, CustQuick.BOTH).toString(), "Sales & Costing + Fabric Stock", 3) {
-                            vm.companyView = CompanyView.ALL; vm.customerQuick = CustQuick.BOTH
-                        }
-                    )
+                    sideBySide(vm).mapIndexed { i, sw -> softwareFig(vm, all, sw, i % 2) { nav.switchTo(Screen.BySoftware(sw)) } } +
+                        listOf(
+                            Fig("Renew in 30 days", Customers.count(all, CustQuick.SOON).toString(), "a licence of theirs ends within 30 days", 2) {
+                                vm.companyView = CompanyView.ALL; vm.customerQuick = CustQuick.SOON
+                            },
+                            Fig("Two or more software", Customers.count(all, CustQuick.BOTH).toString(), "each software its own licence", 3) {
+                                vm.companyView = CompanyView.ALL; vm.customerQuick = CustQuick.BOTH
+                            }
+                        )
                 )
             }
         }
@@ -176,6 +166,17 @@ fun CustomersScreen(
             item(key = "fabric-not-connected") { Box(page) { FabricNotConnectedCard(vm, problem) } }
         } else if (!vm.companyEnding && vm.productsLoad == Load.LOADING && vm.products == null) {
             item(key = "fabric-reading") { Box(page) { FabricReadingCard() } }
+        }
+        /* 2.1.0 — MSME ERP and Nexora Consult not reachable: each in one line, in the service's own words (a key not
+           set says where to set it) — never as "0 customers". The software list not read at all is said above. */
+        if (!vm.companyEnding && vm.productsLoad != Load.FAILED && vm.products != null) {
+            Software.REMOTE_IDS.filter { it != Software.FABRIC }.forEach { sw ->
+                vm.remoteProblem(sw)?.let { p ->
+                    item(key = "$sw-not-connected") {
+                        Box(page) { MessageStrip(Msg("${Software.name(sw)} is not connected: $p", Msg.Kind.WARN), onDismiss = {}) }
+                    }
+                }
+            }
         }
 
         val rows = vm.customerRows
@@ -218,7 +219,12 @@ fun CustomerRow(x: Customer, plans: PlansData?, fabricDown: Boolean, onOpen: () 
         val tags = listOfNotNull(
             x.gstin,
             if (x.self) "self-registered" else null,
-            if (x.both) (if (x.f?.linkedBy == "gstin") "linked by GSTIN" else "linked by hand") else null
+            when {
+                x.w != null && x.remotes.isNotEmpty() -> if (x.remotes.values.first().linkedBy == "gstin") "linked by GSTIN" else "linked by hand"
+                /* 2.1.0 — two or more remote software, no Sales & Costing: joined by the same GSTIN */
+                x.remotes.size > 1 -> "same GSTIN"
+                else -> null
+            }
         )
         if (tags.isNotEmpty()) Small(tags.joinToString(" · "))
         Spacer(Modifier.height(4.dp))
@@ -228,9 +234,12 @@ fun CustomerRow(x: Customer, plans: PlansData?, fabricDown: Boolean, onOpen: () 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Next renewal ", color = c.muted, fontSize = 11.5f.sp)
                 Text(Fmt.day(n.at), color = if (x.soon) c.warn else c.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text(" · " + (if (x.nextOnBoth) "both software" else Software.name(n.sw)), color = c.muted, fontSize = 11.5f.sp,
-                    modifier = Modifier.weight(1f))
-                Text("People ${x.w?.usersTotal ?: "—"} + ${x.f?.people ?: "—"}", color = c.muted, fontSize = 11.5f.sp)
+                Text(" · " + (if (x.nextOnBoth) (if (x.subs.size == 2) "both software" else "every software") else Software.name(n.sw)),
+                    color = c.muted, fontSize = 11.5f.sp, modifier = Modifier.weight(1f))
+                /* Sales & Costing's and Fabric Stock's as ever (a dash where it has none), then MSME ERP's and Nexora Consult's when it has them */
+                val people = listOf(x.w?.usersTotal?.toString() ?: "—", x.f?.people?.toString() ?: "—") +
+                    x.others.values.map { it.people.toString() }
+                Text("People " + people.joinToString(" + "), color = c.muted, fontSize = 11.5f.sp)
             }
         }
     }
@@ -259,6 +268,15 @@ fun SoftwareLines(x: Customer, plans: PlansData?, fabricDown: Boolean) {
             note = if (f.endingSoon) "renew soon" else null
         )
     } else SwLine(Software.FABRIC, Software.FABRIC_NAME + if (fabricDown) " — not connected" else " — not taken", faint = true)
+    /* 2.1.0 — MSME ERP and Nexora Consult, each on its own line when the customer has it */
+    x.others.forEach { (sw, r) ->
+        val s = r.shownState
+        SwLine(
+            sw, Customers.line(x, sw, plans).orEmpty(),
+            color = if (s == "SUSPENDED") c.bad else if (s == "EXPIRED") c.warn else null,
+            note = if (r.endingSoon) "renew soon" else null
+        )
+    }
 }
 
 /**

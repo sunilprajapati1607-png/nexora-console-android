@@ -217,8 +217,8 @@ fun AppScaffold(vm: ConsoleViewModel) {
                     Screen.Customers -> CustomersScreen(vm, nav, gutter, page) { ask = it }
                     Screen.Validity -> ValidityScreen(vm, nav, gutter, page)
                     Screen.Payments -> PaymentsScreen(vm, nav, gutter, page)
-                    Screen.Plans -> PlansScreen(vm, nav, gutter, page)
-                    is Screen.BySoftware -> BySoftwareScreen(vm, nav, screen.sw, gutter, page)
+                    Screen.Plans -> PlansScreen(vm, nav, gutter, page) { ask = it }
+                    is Screen.BySoftware -> BySoftwareScreen(vm, nav, screen.sw, gutter, page) { ask = it }
                     Screen.Enquiries -> EnquiriesScreen(vm, nav, gutter, page) { ask = it }
                     Screen.Machines -> MachinesScreen(vm, gutter, page) { ask = it }
                     Screen.Feedback -> FeedbackScreen(vm, nav, gutter, page)
@@ -272,10 +272,10 @@ fun AppScaffold(vm: ConsoleViewModel) {
 @Composable
 private fun ScreenFab(vm: ConsoleViewModel, nav: Navigator, screen: Screen) {
     val newCustomer = { only: String? ->
-        vm.newCustomer = NewCustomerForm(
-            weight = only != Software.FABRIC,
-            fabric = only == Software.FABRIC
-        )
+        /* 2.1.0 — from a remote software's own screen, that software ticked (and not Sales & Costing) */
+        vm.newCustomer = NewCustomerForm(weight = !Software.isRemote(only)).let { n ->
+            if (only != null && Software.isRemote(only)) n.withRemote(only, n.remote(only).copy(on = true)) else n
+        }
         nav.open(Screen.NewCustomer)
     }
     val recordPayment = { sw: String? ->
@@ -358,18 +358,19 @@ private fun titleOf(screen: Screen, vm: ConsoleViewModel): String = when (screen
 
 private fun subtitleOf(screen: Screen, vm: ConsoleViewModel): String? = when (screen) {
     Screen.Dashboard -> "Every Nexora software at a glance"
-    Screen.Customers -> vm.customers.let { all -> "${all.size} customers · ${all.count { it.both }} on both software" }
+    Screen.Customers -> vm.customers.let { all -> "${all.size} customers · ${all.count { it.both }} on two or more software" }
     Screen.Validity -> "${vm.validityAll.count { it.live && it.left <= 30 }} ending within 30 days · ending first"
     Screen.Payments -> vm.payments?.payments.orEmpty().let { "${it.size} payments · ${Money.rupees(PayFilter.sum(it))}" }
     Screen.Plans -> "${vm.plans?.all?.size ?: 0} plans · each software its own"
-    is Screen.BySoftware -> "${vm.customers.count { it.has(screen.sw) }} customers · " +
-        (if (screen.sw == Software.FABRIC) "Nexora Loom & Fabric Stock" else "Nexora Bag Weight Calculation")
+    is Screen.BySoftware -> vm.remoteProblem(screen.sw)?.takeIf { Software.isRemote(screen.sw) }
+        ?.let { "not connected · " + Software.fullName(screen.sw) }
+        ?: ("${vm.customers.count { it.has(screen.sw) }} customers · " + Software.fullName(screen.sw))
     Screen.Enquiries -> "${vm.inquiryData.inquiries.size} in all · ${vm.openInquiries} open"
     Screen.Machines -> "${vm.data.licences.size} installed · ${vm.runningCount} running"
     Screen.Feedback -> "${vm.feedbackData.feedback.size} in all · ${vm.openFeedback} open · ${vm.openBugs} problems"
     is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.plant
     is Screen.CustomerWin -> vm.customer(screen.key)?.let { x ->
-        listOfNotNull(x.w?.let { Software.WEIGHT_NAME }, x.f?.let { Software.FABRIC_NAME }).joinToString(" + ")
+        x.softwares.joinToString(" + ") { Software.name(it) }
     }
     is Screen.PaymentWin -> vm.paymentById(screen.id)?.let { it.customer + " · " + it.softwareName }
     is Screen.PlanWin -> Software.name(screen.sw)
@@ -453,9 +454,11 @@ private fun ConsoleDrawer(vm: ConsoleViewModel, nav: Navigator, onExport: () -> 
                 }
             }
             DrawerSection("By software")
-            listOf(Software.WEIGHT, Software.FABRIC).forEach { sw ->
+            Software.LICENSED.forEach { sw ->
                 val d = Screen.BySoftware(sw)
-                DrawerRow(d.icon, d.title, SwColours.of(sw)[0], at(d), note = vm.customers.count { it.has(sw) }.toString()) { go { nav.switchTo(d) } }
+                /* 2.1.0 — a software the service could not read says so, never "0" */
+                val note = if (Software.isRemote(sw) && vm.remoteProblem(sw) != null) "—" else vm.customers.count { it.has(sw) }.toString()
+                DrawerRow(d.icon, d.title, SwColours.of(sw)[0], at(d), note = note) { go { nav.switchTo(d) } }
             }
             DrawerRow(Icons.Outlined.Build, Software.JOBWORK_NAME, SwColours.JOBWORK[0], note = "soon", enabled = false) {}
             DrawerRow(Screen.Plans.icon, "Software & plans", tabGradient(Screen.Plans)[0], at(Screen.Plans), note = (vm.plans?.all?.size ?: 0).toString()) {

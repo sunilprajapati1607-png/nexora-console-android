@@ -41,11 +41,13 @@ import org.nexoraofficial.console.ui.theme.LocalNexora
    ====================================================================== */
 
 @Composable
-fun BySoftwareScreen(vm: ConsoleViewModel, nav: Navigator, sw: String, gutter: PaddingValues, page: Modifier) {
+fun BySoftwareScreen(vm: ConsoleViewModel, nav: Navigator, sw: String, gutter: PaddingValues, page: Modifier, onAsk: (Ask) -> Unit = {}) {
     val c = LocalNexora.current
     val view = vm.swView(sw)
     val all = BySoftware.customers(vm.customers, sw)
-    val off = sw == Software.FABRIC && vm.fabricProblem != null
+    /* 2.1.0 — any remote software the service could not read: its own words, never "0 customers" */
+    val problem = if (Software.isRemote(sw)) vm.remoteProblem(sw) else null
+    val off = problem != null
     val pays = vm.payments?.payments.orEmpty().filter { it.software == sw }
     val fy = PayFilter.fyStart(vm.today()).toString()
     val fyPays = pays.filter { (it.paidOn ?: "") >= fy }
@@ -66,8 +68,7 @@ fun BySoftwareScreen(vm: ConsoleViewModel, nav: Navigator, sw: String, gutter: P
                 GradientBanner(colors = SwColours.of(sw)) {
                     Text(Software.name(sw), style = MaterialTheme.typography.headlineSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
                     Text(
-                        (if (sw == Software.FABRIC) "Nexora Loom & Fabric Stock" else "Nexora Bag Weight Calculation") +
-                            " — its customers, its plans and its payments",
+                        Software.fullName(sw) + " — its customers, its plans and its payments",
                         style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f)
                     )
                 }
@@ -80,13 +81,13 @@ fun BySoftwareScreen(vm: ConsoleViewModel, nav: Navigator, sw: String, gutter: P
                     listOf(
                         Fig("Customers", if (off) "—" else all.size.toString(),
                             if (off) "not connected" else "${all.count { st(it) == "LICENSED" }} licensed · ${all.count { st(it) == "DEMO" }} demo · ${all.count { st(it) == "SUSPENDED" }} suspended",
-                            if (sw == Software.FABRIC) 1 else 0),
+                            if (Software.isRemote(sw)) 1 else 0),
                         Fig("Ending in 30 days", d30.size.toString(),
                             "${d30.count { st(it) == "LICENSED" }} paying · " + counted(d30.count { st(it) == "DEMO" }, "demo"), 2) {
                             vm.setSwView(sw, view.copy(tab = "customers", quick = SwQuick.D30))
                         },
                         Fig("Received this financial year", Money.rupees(PayFilter.sum(fyPays)),
-                            "${fyPays.size} payment" + (if (fyPays.size == 1) "" else "s") + " since ${Fmt.day(fy)}", if (sw == Software.FABRIC) 0 else 1) {
+                            "${fyPays.size} payment" + (if (fyPays.size == 1) "" else "s") + " since ${Fmt.day(fy)}", if (Software.isRemote(sw)) 0 else 1) {
                             vm.setSwView(sw, view.copy(tab = "payments"))
                         },
                         Fig("Plans", if (block?.supported == true) plans.size.toString() else "—",
@@ -110,6 +111,8 @@ fun BySoftwareScreen(vm: ConsoleViewModel, nav: Navigator, sw: String, gutter: P
 
         when (view.tab) {
             "plans" -> {
+                /* 2.1.0 — this software's own demo rules, first: kept on its own server */
+                item(key = "rules") { Box(page) { DemoRulesCard(vm, sw, onAsk) } }
                 if (block == null || !block.supported) {
                     item(key = "no-plans") {
                         Box(page) { EmptyCard(block?.let { Software.name(sw) + ": " + it.problem } ?: vm.plansError ?: "Reading the plans…") }
@@ -137,7 +140,7 @@ fun BySoftwareScreen(vm: ConsoleViewModel, nav: Navigator, sw: String, gutter: P
             }
             else -> {
                 if (off) {
-                    item(key = "off") { Box(page) { FabricNotConnectedCard(vm, vm.fabricProblem!!) } }
+                    item(key = "off") { Box(page) { RemoteNotConnectedCard(vm, sw, problem!!) } }
                 } else {
                     item(key = "search") { Box(page) { SearchBox(view.query, { vm.setSwView(sw, view.copy(query = it)) }, "Customer, GSTIN, key…") } }
                     item(key = "quick") {
@@ -153,7 +156,7 @@ fun BySoftwareScreen(vm: ConsoleViewModel, nav: Navigator, sw: String, gutter: P
                             ListHeading(
                                 "${rows.size} customer" + (if (rows.size == 1) "" else "s"),
                                 if (sw == Software.WEIGHT) "${vm.data.licences.size} computers and phones"
-                                else "${all.sumOf { it.f?.devices ?: 0 }} computers and phones"
+                                else "${all.sumOf { it.remote(sw)?.devices ?: 0 }} computers and phones"
                             )
                         }
                     }
@@ -174,7 +177,7 @@ private fun SwCustomerRow(vm: ConsoleViewModel, x: Customer, sw: String, onOpen:
     val s = x.sub(sw) ?: return
     val soon = s.live && s.left <= 30
     val w = x.w
-    val f = x.f
+    val f = x.remote(sw)
     /* 2.0.1 — Fabric Stock's own changes over its plan show as "± n" too */
     val plan = (if (sw == Software.WEIGHT) vm.planName(sw, w?.plan) else vm.planName(sw, f?.plan, f?.planName)) +
         Customers.own(Customers.ownCount(x, sw))
@@ -194,10 +197,12 @@ private fun SwCustomerRow(vm: ConsoleViewModel, x: Customer, sw: String, onOpen:
                 if (p != null) "last payment ${Money.rupees(p.amount)} · ${Fmt.day(p.paidOn)}" else "no payment recorded",
                 color = if (p != null) c.text else c.faint, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f)
             )
-            val other = Software.other(sw)
-            if (x.has(other)) {
-                SwDot(other)
-                Text(" also " + Software.name(other), color = c.muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 2.dp))
+            /* 2.1.0 — the other software it uses: one by name, more by count */
+            val others = x.softwares.filter { it != sw }
+            if (others.isNotEmpty()) {
+                SwDot(others.first())
+                Text(" also " + (if (others.size == 1) Software.name(others.first()) else "${others.size} software"),
+                    color = c.muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 2.dp))
             }
         }
     }

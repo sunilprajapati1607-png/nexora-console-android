@@ -74,10 +74,15 @@ object Kinds {
     private val grey = Accent(Color(0xFF475467), Color(0xFFEEF1F6)) to Accent(Color(0xFFA8B2CA), Color(0xFF232A3B))
     /* 1.9.0 — Fabric Stock's own colour, an emerald apart from the demos' teal; Weight Calc keeps Nexora's blue */
     private val emerald = Accent(Color(0xFF047857), Color(0xFFD1FAE5)) to Accent(Color(0xFF34D399), Color(0xFF0B2E24))
+    /* 2.1.0 — MSME ERP's indigo and Nexora Consult's rose */
+    private val indigo = Accent(Color(0xFF4338CA), Color(0xFFE0E7FF)) to Accent(Color(0xFFA5B4FC), Color(0xFF1E1B4B))
+    private val rose = Accent(Color(0xFFBE185D), Color(0xFFFCE7F3)) to Accent(Color(0xFFF9A8D4), Color(0xFF3B0A24))
 
     fun of(kind: String, dark: Boolean): Accent = (when (kind) {
         "customer", "licensed", "blue", "weight" -> blue
         "fabric", "emerald" -> emerald
+        "erp", "indigo" -> indigo
+        "consult", "rose" -> rose
         "demo", "teal" -> teal
         "machine", "orange" -> orange
         "enquiry", "violet", "ai" -> violet

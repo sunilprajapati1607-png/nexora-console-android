@@ -118,11 +118,12 @@ fun CustomerWindow(
 ) {
     val x = vm.customer(screen.key)
     if (x == null) {
-        /* a Fabric Stock customer while Fabric Stock is still being read, or not reachable */
-        val problem = vm.fabricProblem
-        if (screen.key.startsWith("f") && (problem != null || !vm.fabricReady)) {
+        /* a customer on a remote software alone ("f7", "e3", "c2") while that software is still being read, or not reachable */
+        val rsw = Software.byPrefix(screen.key.firstOrNull())?.id
+        val problem = rsw?.let { vm.remoteProblem(it) }
+        if (rsw != null && (problem != null || !vm.remoteReady(rsw))) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = gutter, horizontalAlignment = Alignment.CenterHorizontally) {
-                item { Box(page) { if (problem != null) FabricNotConnectedCard(vm, problem) else FabricReadingCard() } }
+                item { Box(page) { if (problem != null) RemoteNotConnectedCard(vm, rsw, problem) else FabricReadingCard(rsw) } }
             }
             return
         }
@@ -147,7 +148,7 @@ private fun CustomerBody(
     onAsk: (Ask) -> Unit
 ) {
     val key = x.key
-    var sw by rememberSaveable(key) { mutableStateOf(screen.sw ?: if (x.w != null) Software.WEIGHT else Software.FABRIC) }
+    var sw by rememberSaveable(key) { mutableStateOf(screen.sw ?: x.softwares.firstOrNull() ?: Software.WEIGHT) }
     var subPicked by rememberSaveable(key) { mutableStateOf(screen.sub ?: "licence") }
     var editing by rememberSaveable(key) { mutableStateOf(false) }
     var wEdit by remember(key) { mutableStateOf<WeightEdit?>(null) }
@@ -155,9 +156,12 @@ private fun CustomerBody(
 
     val weightTab = sw == Software.WEIGHT
     val c = x.w
-    val f = x.f
-    /* 2.0.1 — Fabric Stock has a Features tab once its own service has plans (0.8.1); an older one keeps 2.0.0's tabs */
-    val fabricPlans = Plans.supported(vm.plans, Software.FABRIC)
+    /* 2.1.0 — the company on the remote software shown (Fabric Stock, MSME ERP or Nexora Consult); on the Sales &
+       Costing tab of a customer without it, the first one it has */
+    val f = if (weightTab) x.lead else x.remote(sw)
+    /* 2.0.1 — Fabric Stock has a Features tab once its own service has plans (0.8.1); an older one keeps 2.0.0's tabs.
+       2.1.0 — the same for every remote software, by its own plans */
+    val fabricPlans = Plans.supported(vm.plans, sw)
     val subs = if (weightTab)
         listOf("licence" to "Licence", "features" to "Features", "people" to "People", "computers" to "Computers & phones",
             "payments" to "Payments", "more" to "More")
@@ -198,15 +202,16 @@ private fun CustomerBody(
     }
     BackHandler(enabled = editing) { nav.requestBack() }
 
-    /* the Fabric Stock company on show is read with its people and devices, and again after every change */
-    val fid = f?.id
-    DisposableEffect(weightTab, fid) {
-        vm.fabricOpen = if (!weightTab) fid else null
+    /* the remote company on show is read with its people and devices, and again after every change */
+    val fid = if (weightTab) null else f?.id
+    DisposableEffect(weightTab, fid, sw) {
+        vm.fabricOpen = fid
+        if (fid != null) vm.fabricOpenSw = sw
         onDispose { if (vm.fabricOpen == fid) vm.fabricOpen = null }
     }
-    LaunchedEffect(weightTab, fid) {
+    LaunchedEffect(weightTab, fid, sw) {
         if (weightTab) return@LaunchedEffect
-        if (fid != null) vm.loadFabricDetail(fid)
+        if (fid != null) vm.loadFabricDetail(fid, sw = sw)
         else if (vm.productsLoad == Load.IDLE) vm.loadProducts()
     }
     /* the Sales & Costing people are asked when their tab is opened */
@@ -258,7 +263,7 @@ private fun CustomerBody(
 
         item(key = "identity") {
             Box(page) {
-                IdentityCard(x, weightTab, editing, wEdit, fEdit, { wEdit = it }, { fEdit = it })
+                IdentityCard(x, weightTab, f, editing, wEdit, fEdit, { wEdit = it }, { fEdit = it })
             }
         }
 
@@ -284,16 +289,17 @@ private fun CustomerBody(
 
         when {
             weightTab && c != null -> weightItems(vm, nav, x, c, sub, wEdit, { wEdit = it }, page, onAsk)
-            weightTab && f != null -> item(key = "no-weight") { Box(page) { NotUsingWeightCard(vm, nav, f, onAsk) } }
+            weightTab && f != null -> item(key = "no-weight") { Box(page) { NotUsingWeightCard(vm, nav, x, f, onAsk) } }
             !weightTab && f != null -> fabricItems(vm, nav, x, f, sub, fEdit, { fEdit = it }, page, onAsk)
             else -> {
-                val problem = vm.fabricProblem
-                item(key = "no-fabric") {
+                val problem = vm.remoteProblem(sw)
+                item(key = "no-$sw") {
                     Box(page) {
                         when {
-                            problem != null -> FabricNotConnectedCard(vm, problem)
-                            !vm.fabricReady -> FabricReadingCard()
-                            c != null -> NotUsingFabricCard(c, vm, onAsk)
+                            problem != null -> RemoteNotConnectedCard(vm, sw, problem)
+                            !vm.remoteReady(sw) -> FabricReadingCard(sw)
+                            c != null -> NotUsingRemoteCard(sw, c, vm, onAsk)
+                            else -> NotOnRemoteCard(sw, x, vm, onAsk)
                         }
                     }
                 }
@@ -320,7 +326,7 @@ private fun customerTools(
 ): List<Tool> {
     val t = ArrayList<Tool>()
     val c = x.w
-    val f = x.f
+    val f = if (sw == Software.WEIGHT) null else x.remote(sw)
     val licence = if (sw == Software.WEIGHT) c != null else f != null
     if (editing) {
         t += Tool("Save", Icons.Outlined.Save, ToolColours.green, !vm.busy, save)
@@ -353,7 +359,8 @@ private fun customerTools(
         }
         t += if (c.isDemo) Tool("Make licensed", Icons.Outlined.CheckCircle, ToolColours.green) {
             onAsk(Ask.Confirm("Make ${c.name} a licensed Sales & Costing customer for 1 year?",
-                "A demo has every feature whatever its plan; licensed, it has its plan's. Fabric Stock is not touched.",
+                "A demo has every feature whatever its plan; licensed, it has its plan's. " +
+                    (if (x.remotes.isEmpty()) "Its other software is not touched." else x.remotes.keys.joinToString(" and ") { Software.name(it) } + " is not touched."),
                 "Make licensed") { vm.act(id, "licence", 365) })
         } else Tool("+1 year", Icons.Outlined.Update, ToolColours.amber) {
             onAsk(Ask.Confirm("Add a year to Sales & Costing for ${c.name}?", "It ends on " +
@@ -371,17 +378,18 @@ private fun customerTools(
                 "New key", danger = true) { vm.rekey(c) })
         }
     }
-    if (sw == Software.FABRIC && f != null) {
+    if (Software.isRemote(sw) && f != null) {
+        val n = Software.name(sw)
         t += Tool("Add days", Icons.Outlined.Add, ToolColours.orange) { onAsk(fabricAddDaysQuestion(vm, f)) }
         t += if (f.isDemo) Tool("Make licensed", Icons.Outlined.CheckCircle, ToolColours.green) {
-            onAsk(Ask.Confirm("Make ${f.name} a licensed Fabric Stock customer for 1 year?",
+            onAsk(Ask.Confirm("Make ${f.name} a licensed $n customer for 1 year?",
                 "A year from today. Sales & Costing is not touched.", "Make licensed") { vm.fabricMakeLicensed(f) })
         } else Tool("+1 year", Icons.Outlined.Update, ToolColours.amber) {
-            onAsk(Ask.Confirm("Add a year to Fabric Stock for ${f.name}?", "Fabric Stock now ends on " +
+            onAsk(Ask.Confirm("Add a year to $n for ${f.name}?", "$n now ends on " +
                 Fmt.day(f.renewEnd(365).toString()) + ".", "Add a year") { vm.fabricAddDays(f, 365) })
         }
         /* 2.0.1 — its own plans (Fabric Stock 0.8.1): Plan opens the Licence in Edit, as Sales & Costing's does */
-        if (Plans.supported(vm.plans, Software.FABRIC)) {
+        if (Plans.supported(vm.plans, sw)) {
             t += Tool("Plan", Icons.Outlined.WorkspacePremium, ToolColours.violet, !editing) { editOn("licence") }
         }
         t += Tool("Seats", Icons.Outlined.Group, ToolColours.teal, !editing) { editOn("licence") }
@@ -403,6 +411,7 @@ private fun customerTools(
 private fun IdentityCard(
     x: Customer,
     weightTab: Boolean,
+    remote: FabricCompany?,
     editing: Boolean,
     wEdit: WeightEdit?,
     fEdit: FabricEdit?,
@@ -437,7 +446,7 @@ private fun IdentityCard(
                 Spacer(Modifier.height(8.dp))
                 FieldPair({ ReadField("Email", x.email.orEmpty(), it) }, { ReadField("Mobile", x.phone.orEmpty(), it) })
                 Spacer(Modifier.height(8.dp))
-                ReadField("Note", (if (weightTab) x.w?.notes else x.f?.notes) ?: "—")
+                ReadField("Note", (if (weightTab) x.w?.notes else remote?.notes) ?: "—")
             }
         }
     }
@@ -448,22 +457,32 @@ private fun IdentityCard(
 /** Sales & Costing, Fabric Stock and Jobwork (coming) side by side; the one shown wears its software's gradient. */
 @Composable
 private fun SwTabs(x: Customer, sw: String, vm: ConsoleViewModel, onPick: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    /* 2.1.0 — four software now: the one shown is brought into view (a tab is 172 dp and 8 apart) */
+    val scroll = rememberScrollState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    LaunchedEffect(sw) {
+        val i = Software.LICENSED.indexOf(sw).coerceAtLeast(0)
+        if (i >= 2) scroll.animateScrollTo(with(density) { (i * 180 - 40).dp.roundToPx() })
+    }
+    Row(Modifier.fillMaxWidth().horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         /* a software it does not use keeps its name, and says "+ Add" under it (the web console's "+ Add …") */
         SwTab(
             Software.WEIGHT, Icons.Outlined.Scale, Software.WEIGHT_NAME,
             Customers.tabLine(x, Software.WEIGHT, vm.plans) ?: "+ Add — not taken",
             sw == Software.WEIGHT, add = x.w == null
         ) { onPick(Software.WEIGHT) }
-        SwTab(
-            Software.FABRIC, Icons.Outlined.Inventory2, Software.FABRIC_NAME,
-            Customers.tabLine(x, Software.FABRIC, vm.plans) ?: when {
-                vm.fabricProblem != null -> "not connected"
-                !vm.fabricReady -> "reading…"
-                else -> "+ Add — not taken"
-            },
-            sw == Software.FABRIC, add = x.f == null
-        ) { onPick(Software.FABRIC) }
+        /* 2.1.0 — every remote software the same way: Fabric Stock, MSME ERP, Nexora Consult */
+        Software.REMOTE_IDS.forEach { r ->
+            SwTab(
+                r, SwColours.icon(r), Software.name(r),
+                Customers.tabLine(x, r, vm.plans) ?: when {
+                    vm.remoteProblem(r) != null -> "not connected"
+                    !vm.remoteReady(r) -> "reading…"
+                    else -> "+ Add — not taken"
+                },
+                sw == r, add = !x.has(r)
+            ) { onPick(r) }
+        }
         SwTab(Software.JOBWORK, Icons.Outlined.Build, Software.JOBWORK_NAME, "coming — no licence yet", false, add = false, enabled = false) {}
     }
 }
@@ -782,18 +801,20 @@ private fun WeightComputersCard(vm: ConsoleViewModel, nav: Navigator, c: Company
 /* ---- a Fabric Stock customer with no Sales & Costing ---- */
 
 @Composable
-private fun NotUsingWeightCard(vm: ConsoleViewModel, nav: Navigator, f: FabricCompany, onAsk: (Ask) -> Unit) {
+private fun NotUsingWeightCard(vm: ConsoleViewModel, nav: Navigator, x: Customer, f: FabricCompany, onAsk: (Ask) -> Unit) {
+    /* 2.1.0 — whichever remote software it is on; every one of them linked to the new licence */
+    val others = x.remotes.keys.joinToString(" and ") { Software.name(it) }.ifEmpty { Software.name(f.sw) }
     ColourCard("Not using Sales & Costing", Icons.Outlined.Scale, "weight") {
         Help("${f.name} does not use Sales & Costing yet. It gets a licence of its own — its own key — made with this company's " +
-            "name, GSTIN, email and mobile. Fabric Stock is not touched.")
+            "name, GSTIN, email and mobile. $others is not touched.")
         Spacer(Modifier.height(12.dp))
         ConsoleButton("Make licensed for 1 year", {
             onAsk(
                 Ask.Confirm(
                     "Make ${f.name} a licensed Sales & Costing customer for 1 year?",
-                    "It gets a Sales & Costing licence key of its own, on Pro; Fabric Stock is not touched.",
+                    "It gets a Sales & Costing licence key of its own, on Pro; $others is not touched.",
                     "Make licensed"
-                ) { vm.startWeightFor(f) { k -> if (k != null) nav.replace(Screen.CustomerWin(k, Software.WEIGHT)) } }
+                ) { vm.startWeightFor(f, x.remotes.values.toList()) { k -> if (k != null) nav.replace(Screen.CustomerWin(k, Software.WEIGHT)) } }
             )
         }, kind = ButtonKind.Primary, small = true)
     }
@@ -817,15 +838,18 @@ private fun LazyListScope.fabricItems(
             item(key = "f-licence") { Box(page) { FabricLicenceCard(vm, f, edit, onEdit) } }
             item(key = "f-figs") {
                 Box(page) {
-                    val block = vm.plans?.fabric
+                    val block = vm.plans?.block(f.sw)
+                    val n = Software.name(f.sw)
                     FigGrid(
                         listOf(
                             Fig("Computers & phones", f.devices.toString(), "not counted against seats", 0),
                             Fig("People", f.people.toString(), "of ${f.seats} seats", 1),
-                            Fig("Linked", if (x.w != null) (if (f.linkedBy == "gstin") "same GSTIN" else "by hand") else "Fabric Stock only",
-                                if (x.w != null) "shown with its Sales & Costing company" else "not with a Sales & Costing company", 2),
+                            Fig("Linked", if (x.w != null) (if (f.linkedBy == "gstin") "same GSTIN" else "by hand")
+                                else if (x.remotes.size > 1) "same GSTIN" else "$n only",
+                                if (x.w != null) "shown with its Sales & Costing company"
+                                else if (x.remotes.size > 1) "shown with its other software" else "not with a Sales & Costing company", 2),
                             Fig("Plans", if (block?.supported == true) "its own" else "Standard",
-                                if (block?.supported == true) "made under Software & plans" else "Fabric Stock has no plans yet", 3)
+                                if (block?.supported == true) "made under Software & plans" else "$n has no plans yet", 3)
                         )
                     )
                 }
@@ -840,7 +864,7 @@ private fun LazyListScope.fabricItems(
             item(key = "f-people") { Box(page) { FabricPeopleCard(vm, f, onAsk) } }
         }
         "computers" -> item(key = "f-devices") { Box(page) { FabricDevicesCard(vm, f, onAsk) } }
-        "payments" -> paymentItems(vm, nav, x, Software.FABRIC, page)
+        "payments" -> paymentItems(vm, nav, x, f.sw, page)
         "company" -> item(key = "f-company") { Box(page) { FabricCompanyCard(vm, f, x.w, onAsk) } }
     }
 }
@@ -850,18 +874,19 @@ private fun FabricLicenceCard(vm: ConsoleViewModel, f: FabricCompany, edit: Fabr
     val cl = LocalNexora.current
     val clipboard = LocalClipboardManager.current
     val s = f.shownState
+    val n = Software.name(f.sw)
     ConsoleCard(padding = 14) {
         if (f.endingSoon) {
-            MessageStrip(Msg("The Fabric Stock licence ends ${Fmt.day(f.expiresAt)} — call them to renew.", Msg.Kind.WARN), onDismiss = {})
+            MessageStrip(Msg("The $n licence ends ${Fmt.day(f.expiresAt)} — call them to renew.", Msg.Kind.WARN), onDismiss = {})
             Spacer(Modifier.height(12.dp))
         }
-        val block = vm.plans?.fabric?.takeIf { it.supported }
+        val block = vm.plans?.block(f.sw)?.takeIf { it.supported }
         if (edit != null && block != null) {
             /* 2.0.1 — its own plans (Fabric Stock 0.8.1): the ones in use, and the one it is on even if retired */
             val current = Requests.fabricPlan(f)
             val offered = block.plans.filter { it.active || it.code == current }
             val options = offered.map { it.code to (it.name + if (!it.active) " (retired)" else "") }
-                .ifEmpty { listOf(current to vm.planName(Software.FABRIC, current, f.planName)) }
+                .ifEmpty { listOf(current to vm.planName(f.sw, current, f.planName)) }
             val chosen = block.plan(edit.plan)
             ChoiceField(
                 "Plan", options, edit.plan,
@@ -875,7 +900,7 @@ private fun FabricLicenceCard(vm: ConsoleViewModel, f: FabricCompany, edit: Fabr
         } else {
             FieldPair(
                 {
-                    ReadField("Plan", vm.planName(Software.FABRIC, f.plan, f.planName) + Customers.own(f.featureOverrides.size) +
+                    ReadField("Plan", vm.planName(f.sw, f.plan, f.planName) + Customers.own(f.featureOverrides.size) +
                         if (f.onDemo) " — a demo has everything" else "", it)
                 },
                 { ReadField("State", Customers.stateWord(s), it, valueColor = stateColour(s)) }
@@ -914,8 +939,8 @@ private fun FabricLicenceCard(vm: ConsoleViewModel, f: FabricCompany, edit: Fabr
             )
             Spacer(Modifier.height(6.dp))
             Help(
-                "Fabric Stock's own " + (if (block != null) "plan, seats, offline days and features" else "seats and offline days") +
-                    " — Sales & Costing's are counted apart. Save sends them to Fabric Stock in one update."
+                "$n's own " + (if (block != null) "plan, seats, offline days and features" else "seats and offline days") +
+                    " — Sales & Costing's are counted apart. Save sends them to $n in one update."
             )
         } else {
             FieldPair(ends) { ReadField("Seats (people)", "${f.people} of ${f.seats}", it) }

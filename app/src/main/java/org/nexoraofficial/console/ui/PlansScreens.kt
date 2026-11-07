@@ -66,10 +66,9 @@ import org.nexoraofficial.console.ui.theme.LocalNexora
    ====================================================================== */
 
 @Composable
-fun PlansScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, page: Modifier) {
+fun PlansScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, page: Modifier, onAsk: (Ask) -> Unit = {}) {
     val data = vm.plans
     val wb = data?.weight
-    val fb = data?.fabric
     val t = vm.planQuery.lowercase().trim()
     val rows = data?.all.orEmpty().filter { (sw, p) ->
         (vm.planSoft == null || vm.planSoft == sw) &&
@@ -86,46 +85,76 @@ fun PlansScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, pag
         item(key = "search") { Box(page) { SearchBox(vm.planQuery, { vm.planQuery = it }, "Plan or feature…") } }
         item(key = "quick") {
             Box(page) {
+                /* 2.1.0 — every software with licences, each its own plans */
                 QuickRow(
-                    listOf(
-                        Quick("ANY", "Every software"),
-                        Quick(Software.WEIGHT, Software.WEIGHT_NAME, data?.plansOf(Software.WEIGHT)?.size),
-                        Quick(Software.FABRIC, Software.FABRIC_NAME, if (fb?.supported == true) fb.plans.size else null)
-                    ),
+                    listOf(Quick("ANY", "Every software"), Quick(Software.WEIGHT, Software.WEIGHT_NAME, data?.plansOf(Software.WEIGHT)?.size)) +
+                        Software.REMOTE_IDS.map { sw ->
+                            val b = data?.block(sw)
+                            Quick(sw, Software.name(sw), if (b?.supported == true) b.plans.size else null)
+                        },
                     vm.planSoft ?: "ANY"
                 ) { vm.planSoft = it.takeIf { s -> s != "ANY" } }
             }
+        }
+        /* 2.1.0 — the plans, or each software's own demo rules */
+        item(key = "plan-tabs") {
+            Box(page) {
+                SubTabs(listOf("plans" to "Plans", "rules" to "Demo rules"), vm.planTab,
+                    mapOf("plans" to rows.size.toString(), "rules" to (vm.planSoft?.let { 1 } ?: Software.LICENSED.size).toString())) {
+                    vm.planTab = it
+                }
+            }
+        }
+        if (vm.planTab == "rules") {
+            item(key = "rules-heading") {
+                Box(page) { ListHeading("Demo Rules", "each software its own, on its own server — never mixed") }
+            }
+            if (vm.rulesLoad == Load.FAILED) {
+                item(key = "rules-failed") { Box(page) { EmptyCard(vm.rulesError ?: "The demo rules could not be read.") } }
+            }
+            Software.LICENSED.filter { vm.planSoft == null || vm.planSoft == it }.forEach { sw ->
+                item(key = "rules-$sw") { Box(page) { DemoRulesCard(vm, sw, onAsk) } }
+            }
+            item(key = "rules-help") { Box(page) { DemoRulesHelp() } }
+            return@LazyColumn
         }
         item(key = "new") {
             Box(page) {
                 WrapRow {
                     ConsoleButton("+ New Sales & Costing plan", { nav.open(Screen.PlanWin(Software.WEIGHT, null)) }, small = true,
                         enabled = wb?.supported == true)
-                    ConsoleButton("+ New Fabric Stock plan", { nav.open(Screen.PlanWin(Software.FABRIC, null)) }, small = true,
-                        enabled = fb?.supported == true)
+                    Software.REMOTE_IDS.forEach { sw ->
+                        ConsoleButton("+ New ${Software.name(sw)} plan", { nav.open(Screen.PlanWin(sw, null)) }, small = true,
+                            enabled = data?.block(sw)?.supported == true)
+                    }
                 }
             }
         }
         item(key = "figs") {
             Box(page) {
                 val wPlans = data?.plansOf(Software.WEIGHT).orEmpty()
-                val fPlans = data?.plansOf(Software.FABRIC).orEmpty()
+                val remoteFigs = Software.REMOTE_IDS.mapIndexed { i, sw ->
+                    val b = data?.block(sw)
+                    val ps = data?.plansOf(sw).orEmpty()
+                    Fig(Software.name(sw), if (b?.supported == true) "${b.plans.size} plans" else "—",
+                        when {
+                            b == null -> if (vm.plansLoad == Load.FAILED) "not read" else "reading…"
+                            b.supported -> "${b.features.size} features · ${ps.sumOf { it.customers }} paying customers"
+                            b.ok -> "no plans in its service yet"
+                            else -> "not connected"
+                        }, i + 1) { vm.planSoft = sw }
+                }
+                val everyPlan = Software.LICENSED.flatMap { data?.plansOf(it).orEmpty() }
                 FigGrid(
                     listOf(
                         Fig(Software.WEIGHT_NAME, if (wb != null) "${wPlans.size} plans" else "—",
                             if (wb != null) "${wb.features.size} features · ${wPlans.sumOf { it.customers }} paying customers" else "reading…", 0) {
                             vm.planSoft = Software.WEIGHT
-                        },
-                        Fig(Software.FABRIC_NAME, if (fb?.supported == true) "${fb.plans.size} plans" else "—",
-                            when {
-                                fb == null -> if (vm.plansLoad == Load.FAILED) "not read" else "reading…"
-                                fb.supported -> "${fb.features.size} features · ${fPlans.sumOf { it.customers }} paying customers"
-                                fb.ok -> "no plans in its service yet"
-                                else -> "not connected"
-                            }, 1) { vm.planSoft = Software.FABRIC },
+                        }
+                    ) + remoteFigs + listOf(
                         Fig(Software.JOBWORK_NAME, "—", "joins when it has a licence", 2),
                         /* 2.0.1 — every software's: Fabric Stock's customers have features of their own too */
-                        Fig("Customer changes", (wPlans + fPlans).sumOf { it.changed }.toString(), "customers with a feature added or off", 3)
+                        Fig("Customer changes", everyPlan.sumOf { it.changed }.toString(), "customers with a feature added or off", 3)
                     )
                 )
             }
@@ -135,9 +164,12 @@ fun PlansScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, pag
         } else if (data == null) {
             item(key = "reading") { Box(page) { EmptyCard("Reading the plans…") } }
         }
-        if ((vm.planSoft == null || vm.planSoft == Software.FABRIC) && fb != null && !fb.supported) {
-            item(key = "fabric-note") {
-                Box(page) { MessageStrip(Msg("Fabric Stock: " + fb.problem, Msg.Kind.WARN), onDismiss = {}) }
+        Software.REMOTE_IDS.forEach { sw ->
+            val b = data?.block(sw)
+            if ((vm.planSoft == null || vm.planSoft == sw) && b != null && !b.supported) {
+                item(key = "$sw-note") {
+                    Box(page) { MessageStrip(Msg(Software.name(sw) + ": " + b.problem, Msg.Kind.WARN), onDismiss = {}) }
+                }
             }
         }
         item(key = "heading") {
@@ -256,7 +288,7 @@ private fun PlanBody(
     /* the paying customers on it — a demo has every feature whatever its plan, and neither service counts it */
     val onIt = if (p == null) emptyList() else vm.customers.filter { x ->
         if (sw == Software.WEIGHT) x.w != null && !x.w.isDemo && x.w.plan.uppercase() == p.code
-        else x.f != null && !x.f.isDemo && Requests.fabricPlan(x.f) == p.code
+        else x.remote(sw).let { r -> r != null && !r.isDemo && Requests.fabricPlan(r) == p.code }
     }
 
     val save = {
@@ -321,8 +353,12 @@ private fun PlanBody(
                         ConsoleField("Plan name", form.name, { form = form.copy(name = it.take(40)) })
                         Spacer(Modifier.height(8.dp))
                         ConsoleField("Gives (a few words)", form.note, { form = form.copy(note = it.take(120)) },
-                            placeholder = if (sw == Software.FABRIC) "e.g. loom reading, stock and dispatch"
-                                          else "e.g. calculation, quotation and the cost tools")
+                            placeholder = when (sw) {
+                                Software.FABRIC -> "e.g. loom reading, stock and dispatch"
+                                Software.ERP -> "e.g. sales, purchase, stock and production"
+                                Software.CONSULT -> "e.g. clients, returns and reminders"
+                                else -> "e.g. calculation, quotation and the cost tools"
+                            })
                         Spacer(Modifier.height(8.dp))
                         val money = { s: String -> s.filter { ch -> ch.isDigit() || ch == '.' } }
                         FieldPair(
@@ -414,8 +450,8 @@ private fun PlanBody(
                         if (onIt.isEmpty()) Help("No paying customer is on this plan.")
                         onIt.forEachIndexed { i, x ->
                             if (i > 0) DashedRule(Modifier.padding(vertical = 8.dp))
-                            val st = if (sw == Software.WEIGHT) x.w!!.swState else x.f!!.shownState
-                            val ends = if (sw == Software.WEIGHT) x.w!!.expiresAt else x.f!!.expiresAt
+                            val st = if (sw == Software.WEIGHT) x.w!!.swState else x.remote(sw)!!.shownState
+                            val ends = if (sw == Software.WEIGHT) x.w!!.expiresAt else x.remote(sw)!!.expiresAt
                             val own = Customers.ownCount(x, sw)
                             Row(Modifier.fillMaxWidth().pressable { nav.open(Screen.CustomerWin(x.key, sw, "licence")) }.padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically) {

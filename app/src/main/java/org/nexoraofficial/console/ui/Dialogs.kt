@@ -113,6 +113,16 @@ sealed interface Ask {
         val clearable: Boolean = false,
         val onPick: (String) -> Unit
     ) : Ask
+
+    /**
+     * 2.1.0 — one software's demo rules, changed for that software only (its own server). Values out of range are
+     * refused in the dialog, before anything is sent.
+     */
+    data class DemoRules(
+        val sw: String,
+        val initial: org.nexoraofficial.console.data.RulesForm,
+        val onSave: (org.nexoraofficial.console.data.RulesForm) -> Unit
+    ) : Ask
 }
 
 /**
@@ -143,6 +153,18 @@ private fun DialogShell(
         },
         confirmButton = { actions() }
     )
+}
+
+/** 2.1.0 — one of two, as two buttons side by side (the chosen one filled), with a line under them. */
+@Composable
+private fun TwoWay(label: String, first: String, second: String, firstOn: Boolean, help: String, onPick: (Boolean) -> Unit) {
+    val c = LocalNexora.current
+    Text(label, color = c.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ConsoleButton(first, { onPick(true) }, kind = if (firstOn) ButtonKind.Primary else ButtonKind.Default, small = true)
+        ConsoleButton(second, { onPick(false) }, kind = if (!firstOn) ButtonKind.Primary else ButtonKind.Default, small = true)
+    }
+    Small(help)
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -364,6 +386,58 @@ fun AskHost(ask: Ask?, onClose: () -> Unit) {
                 androidx.compose.material3.DatePicker(state = state, title = {
                     Text(ask.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 24.dp, top = 16.dp))
                 })
+            }
+        }
+
+        is Ask.DemoRules -> {
+            var f by remember(ask) { mutableStateOf(ask.initial) }
+            var err by remember(ask) { mutableStateOf<String?>(null) }
+            val n = org.nexoraofficial.console.data.Software.name(ask.sw)
+            val remote = org.nexoraofficial.console.data.Software.isRemote(ask.sw)
+            val digits = { s: String -> s.filter { it.isDigit() }.take(3) }
+            DialogShell(
+                title = "$n — demo rules",
+                body = "$n's own rules, kept on $n's own server. Saving changes them for $n only; every other software keeps its own.",
+                onDismiss = onClose,
+                actions = {
+                    ConsoleButton("Cancel", onClose)
+                    ConsoleButton(
+                        "Save",
+                        {
+                            /* refused here, before anything is sent, when a value is out of range */
+                            val complaint = f.problem(ask.sw)
+                            if (complaint != null) err = complaint
+                            else { ask.onSave(f); onClose() }
+                        },
+                        kind = ButtonKind.Primary
+                    )
+                }
+            ) {
+                /* one field under another, and each choice two plain buttons: a dialog measures its content by its
+                   intrinsic size, which a wrapping row of chips does not give cheaply */
+                Spacer(Modifier.height(12.dp))
+                ConsoleField("Demo length (days, 1–${if (remote) 60 else 365})", f.trialDays, { f = f.copy(trialDays = digits(it)); err = null },
+                    numeric = true)
+                Spacer(Modifier.height(8.dp))
+                ConsoleField("Offline days for a demo (0–${if (remote) 30 else 365})", f.demoGraceDays,
+                    { f = f.copy(demoGraceDays = digits(it)); err = null }, numeric = true)
+                if (remote) {
+                    Spacer(Modifier.height(8.dp))
+                    ConsoleField("Demo seats (people, 1–50)", f.demoSeats, { f = f.copy(demoSeats = digits(it)); err = null }, numeric = true)
+                }
+                Spacer(Modifier.height(12.dp))
+                TwoWay("New sign-ups", "Open", "Closed", f.signupsOpen, "whether a plant may start a demo of $n itself") {
+                    f = f.copy(signupsOpen = it); err = null
+                }
+                Spacer(Modifier.height(10.dp))
+                TwoWay("When a licence ends", "Read-only", "Stops", f.expiredMode != "HARDSTOP",
+                    if (f.expiredMode == "HARDSTOP") "$n stops until it is renewed" else "$n opens read-only until it is renewed") {
+                    f = f.copy(expiredMode = if (it) "READONLY" else "HARDSTOP"); err = null
+                }
+                err?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = LocalNexora.current.bad, fontSize = 12.5f.sp)
+                }
             }
         }
 

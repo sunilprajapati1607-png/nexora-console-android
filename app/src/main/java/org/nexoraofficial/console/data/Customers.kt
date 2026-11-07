@@ -24,7 +24,8 @@ data class Sub(val sw: String, val state: String, val at: String?, val left: Int
 }
 
 data class Customer(
-    /** "w12" for a Sales & Costing company (with its Fabric Stock, if any), "f7" for a Fabric Stock company alone. */
+    /** "w12" for a Sales & Costing company (with its other software, if any); "f7", "e3", "c2" for a customer on the
+     *  other software alone — by the first of them it has (Fabric Stock, MSME ERP, Nexora Consult). */
     val key: String,
     val name: String,
     val gstin: String?,
@@ -33,12 +34,26 @@ data class Customer(
     val w: Company?,
     val f: FabricCompany?,
     val self: Boolean,
-    val since: String?
+    val since: String?,
+    /** 2.1.0 — its MSME ERP and Nexora Consult companies (any remote software but Fabric Stock), by software. */
+    val others: Map<String, FabricCompany> = emptyMap()
 ) {
-    val subs: List<Sub> = listOfNotNull(
-        w?.let { Sub(Software.WEIGHT, it.swState, it.expiresAt, it.daysLeft) },
-        f?.let { Sub(Software.FABRIC, it.shownState, it.expiresAt, it.daysLeft) }
-    )
+    /** 2.1.0 — every remote software it uses, in the table's order (Fabric Stock, MSME ERP, Nexora Consult). */
+    val remotes: Map<String, FabricCompany> = LinkedHashMap<String, FabricCompany>().apply {
+        Software.REMOTE_IDS.forEach { sw -> (if (sw == Software.FABRIC) f else others[sw])?.let { put(sw, it) } }
+    }
+
+    /** Its company on remote software [sw], or null. */
+    fun remote(sw: String): FabricCompany? = if (sw == Software.FABRIC) f else others[sw]
+
+    /** The software it uses, Sales & Costing first. */
+    val softwares: List<String> get() = (if (w != null) listOf(Software.WEIGHT) else emptyList()) + remotes.keys
+
+    /** The first remote company it has — the one a customer without Sales & Costing is known by. */
+    val lead: FabricCompany? get() = remotes.values.firstOrNull()
+
+    val subs: List<Sub> = listOfNotNull(w?.let { Sub(Software.WEIGHT, it.swState, it.expiresAt, it.daysLeft) }) +
+        remotes.map { (sw, r) -> Sub(sw, r.shownState, r.expiresAt, r.daysLeft) }
 
     /** The licence that ends first (a suspended one is not counted). */
     val next: Sub? = subs.filter { it.state != "SUSPENDED" }.minByOrNull { moment(it.at) ?: Instant.MAX }
@@ -46,14 +61,15 @@ data class Customer(
     /** A licence of theirs that runs and ends within 30 days ("Renew in 30 days"). */
     val soon: Boolean = subs.any { it.state != "SUSPENDED" && it.state != "EXPIRED" && it.left <= 30 }
 
-    val both: Boolean get() = w != null && f != null
+    /** On two or more software (2.0: Sales & Costing and Fabric Stock both). */
+    val both: Boolean get() = subs.size > 1
 
-    fun has(sw: String): Boolean = if (sw == Software.FABRIC) f != null else w != null
+    fun has(sw: String): Boolean = if (sw == Software.WEIGHT) w != null else remote(sw) != null
 
     fun sub(sw: String): Sub? = subs.find { it.sw == sw }
 
-    /** The people on its seats: Sales & Costing's and Fabric Stock's. */
-    val people: Int get() = (w?.usersTotal ?: 0) + (f?.people ?: 0)
+    /** The people on its seats, on every software it uses. */
+    val people: Int get() = (w?.usersTotal ?: 0) + remotes.values.sumOf { it.people }
 
     /** "Customer · 2 software · since 08 Oct 26 · registered by the plant itself" */
     val subtitle: String
@@ -67,48 +83,92 @@ data class Customer(
     fun matches(term: String): Boolean {
         if (term.isBlank()) return true
         val t = term.lowercase().trim()
-        return listOf(name, gstin, email, phone, w?.licenceKey, w?.loginId, f?.licenceKey, f?.loginId, f?.name)
+        return (listOf(name, gstin, email, phone, w?.licenceKey, w?.loginId) +
+            remotes.values.flatMap { listOf(it.licenceKey, it.loginId, it.name) })
             .any { it?.lowercase()?.contains(t) == true }
     }
 }
 
 /** The quick views of the Customers list (the web console's Q). DELETED is the archive (CompanyView). */
 enum class CustQuick(val label: String) {
-    ALL("All"), SOON("Renew in 30 days"), DEMO("On a demo"), BOTH("Both software"),
+    ALL("All"), SOON("Renew in 30 days"), DEMO("On a demo"), BOTH("Two or more software"),
     SUSP("Suspended"), SELF("Self-registered")
 }
 
 object Customers {
 
     /** Every customer once: each Sales & Costing company with its Fabric Stock, then Fabric Stock alone. */
-    fun of(weight: List<Company>, fabric: List<FabricCompany>): List<Customer> {
-        val link = CompanyList.linked(weight, fabric)
+    fun of(weight: List<Company>, fabric: List<FabricCompany>): List<Customer> = of(weight, mapOf(Software.FABRIC to fabric))
+
+    /**
+     * 2.1.0 — every customer once, across every software. A customer is a Sales & Costing company with every
+     * remote company whose companyId points at it (the older one when two of one software do); the remote
+     * companies left over that share a GSTIN — one of each software — are one customer; any other is a customer
+     * on its own. Every remote company appears exactly once.
+     */
+    fun of(weight: List<Company>, given: Map<String, List<FabricCompany>>): List<Customer> {
+        val ids = weight.map { it.id }.toSet()
+        /* each company carries the software it is listed under */
+        val remotes = given.mapValues { (sw, l) -> l.map { if (it.sw == sw) it else it.copy(sw = sw) } }
+        /* sw → (Sales & Costing id → its company on sw) */
+        val linked = Software.REMOTE_IDS.associateWith { sw ->
+            remotes[sw].orEmpty().filter { it.companyId != null && it.companyId in ids }
+                .groupBy { it.companyId!! }.mapValues { (_, l) -> l.minBy { it.id } }
+        }
+        val shown = linked.mapValues { (_, m) -> m.values.map { it.id }.toSet() }
         val out = ArrayList<Customer>()
         weight.forEach { c ->
-            val f = link[c.id]
-            out += Customer(
-                key = "w${c.id}", name = c.name, gstin = c.gstin ?: f?.gstin, email = c.email ?: f?.email, phone = c.phone ?: f?.phone,
-                w = c, f = f, self = c.selfRegistered, since = c.createdAt ?: c.registeredAt
-            )
+            val mine = Software.REMOTE_IDS.mapNotNull { sw -> linked[sw]?.get(c.id)?.let { sw to it } }.toMap()
+            out += customerOf("w${c.id}", c, mine)
         }
-        CompanyList.fabricOnly(weight, fabric).forEach { f ->
-            out += Customer(
-                key = "f${f.id}", name = f.name, gstin = f.gstin, email = f.email, phone = f.phone,
-                w = null, f = f, self = f.selfRegistered, since = f.createdAt
-            )
+        /* the rest, in the table's order and each software's own order (as 2.0 listed Fabric Stock alone): the first of a
+           GSTIN starts its customer, and one company of each other software with that GSTIN joins it; any other is alone */
+        val left = Software.REMOTE_IDS.flatMap { sw -> remotes[sw].orEmpty().filter { it.id !in shown[sw].orEmpty() } }
+        val made = ArrayList<LinkedHashMap<String, FabricCompany>>()
+        val byGstin = HashMap<String, LinkedHashMap<String, FabricCompany>>()
+        left.forEach { r ->
+            val g = r.gstin?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
+            val group = g?.let { byGstin[it] }
+            if (group != null && !group.containsKey(r.sw)) {
+                group[r.sw] = r
+                return@forEach
+            }
+            val fresh = LinkedHashMap<String, FabricCompany>().apply { put(r.sw, r) }
+            made += fresh
+            if (g != null && group == null) byGstin[g] = fresh
+        }
+        made.forEach { mine ->
+            val lead = mine.values.first()
+            out += customerOf((Software.remote(lead.sw)?.prefix ?: 'f') + lead.id.toString(), null, mine)
         }
         return out
+    }
+
+    private fun customerOf(key: String, c: Company?, mine: Map<String, FabricCompany>): Customer {
+        val rs = Software.REMOTE_IDS.mapNotNull { mine[it] }
+        val lead = rs.firstOrNull()
+        return Customer(
+            key = key,
+            name = c?.name ?: lead?.name ?: "-",
+            gstin = c?.gstin ?: rs.firstNotNullOfOrNull { it.gstin },
+            email = c?.email ?: rs.firstNotNullOfOrNull { it.email },
+            phone = c?.phone ?: rs.firstNotNullOfOrNull { it.phone },
+            w = c,
+            f = mine[Software.FABRIC],
+            self = c?.selfRegistered ?: lead?.selfRegistered ?: false,
+            since = if (c != null) c.createdAt ?: c.registeredAt else lead?.createdAt,
+            others = mine.filterKeys { it != Software.FABRIC }
+        )
     }
 
     /** One customer by its key; a key that has changed (a Fabric Stock customer that now has Sales & Costing) is found by either licence. */
     fun find(list: List<Customer>, key: String): Customer? {
         list.find { it.key == key }?.let { return it }
         val id = key.drop(1).toIntOrNull() ?: return null
-        return when (key.firstOrNull()) {
-            'f' -> list.find { it.f?.id == id }
-            'w' -> list.find { it.w?.id == id }
-            else -> null
-        }
+        val first = key.firstOrNull()
+        if (first == 'w') return list.find { it.w?.id == id }
+        val sw = Software.byPrefix(first)?.id ?: return null
+        return list.find { it.remote(sw)?.id == id }
     }
 
     fun count(list: List<Customer>, q: CustQuick): Int = list.count { keep(it, q) }
@@ -161,8 +221,8 @@ object Customers {
             Software.WEIGHT_NAME + " · " + Plans.nameOf(plans, sw, c.plan) + own(c.featureOverrides.size) + " · " +
                 daysText(c.swState, c.daysLeft, c.expiresAt)
         } else {
-            val f = x.f ?: return null
-            Software.FABRIC_NAME + " · " + Plans.nameOf(plans, sw, f.plan, f.planName) + own(f.featureOverrides.size) + " · " +
+            val f = x.remote(sw) ?: return null
+            Software.name(sw) + " · " + Plans.nameOf(plans, sw, f.plan, f.planName) + own(f.featureOverrides.size) + " · " +
                 daysText(f.shownState, f.daysLeft, f.expiresAt)
         }
     }
@@ -172,7 +232,13 @@ object Customers {
 
     /** How many features of its own [x] has over its plan on [sw]. */
     fun ownCount(x: Customer, sw: String): Int =
-        if (sw == Software.WEIGHT) x.w?.featureOverrides?.size ?: 0 else x.f?.featureOverrides?.size ?: 0
+        if (sw == Software.WEIGHT) x.w?.featureOverrides?.size ?: 0 else x.remote(sw)?.featureOverrides?.size ?: 0
+
+    /** 2.1.0 — the plan code [x] is on in [sw] (Sales & Costing's, or the remote company's), or null. */
+    fun planCode(x: Customer, sw: String): String? = if (sw == Software.WEIGHT) x.w?.plan else x.remote(sw)?.plan
+
+    /** 2.1.0 — the plan's name as the remote company itself came with it (null for Sales & Costing). */
+    fun planFallback(x: Customer, sw: String): String? = if (sw == Software.WEIGHT) null else x.remote(sw)?.planName
 
     /** "Standard ± 3 · 245 days" — the same without the software's name (the customer's software tabs). */
     fun tabLine(x: Customer, sw: String, plans: PlansData?): String? =
@@ -209,9 +275,9 @@ object Validity {
                 out += ValidityRow(x, Software.WEIGHT, Plans.nameOf(plans, Software.WEIGHT, c.plan), c.swState,
                     c.periodStartedAt, c.expiresAt, c.daysLeft, c.seats, payments?.last(x, Software.WEIGHT))
             }
-            x.f?.let { f ->
-                out += ValidityRow(x, Software.FABRIC, Plans.nameOf(plans, Software.FABRIC, f.plan, f.planName), f.shownState,
-                    f.periodStartedAt ?: f.createdAt, f.expiresAt, f.daysLeft, f.seats, payments?.last(x, Software.FABRIC))
+            x.remotes.forEach { (sw, f) ->
+                out += ValidityRow(x, sw, Plans.nameOf(plans, sw, f.plan, f.planName), f.shownState,
+                    f.periodStartedAt ?: f.createdAt, f.expiresAt, f.daysLeft, f.seats, payments?.last(x, sw))
             }
         }
         return out.sortedWith(compareBy<ValidityRow> { moment(it.ends) ?: Instant.MAX }.thenBy { it.c.name.lowercase() })
@@ -252,7 +318,8 @@ object BySoftware {
             SwQuick.DEMO -> s.state == "DEMO"
             SwQuick.ENDED -> s.state == "EXPIRED"
             SwQuick.SUSP -> s.state == "SUSPENDED"
-            SwQuick.BOTH -> x.both
+            /* 2.1.0 — a remote software's: also on Sales & Costing; Sales & Costing's: also on any other */
+            SwQuick.BOTH -> if (sw == Software.WEIGHT) x.both else x.w != null
         }
     }
 
@@ -262,7 +329,7 @@ object BySoftware {
         SwQuick.DEMO -> "On a demo"
         SwQuick.ENDED -> "Ended"
         SwQuick.SUSP -> "Suspended"
-        SwQuick.BOTH -> "Also on " + Software.name(Software.other(sw))
+        SwQuick.BOTH -> if (sw == Software.WEIGHT) "Also on other software" else "Also on " + Software.WEIGHT_NAME
     }
 
     fun filter(list: List<Customer>, sw: String, q: SwQuick, term: String): List<Customer> =
@@ -344,11 +411,12 @@ object Features {
 
     /** 2.0.1 — a Fabric Stock licence's features over its plan (its own catalogue and plans, from its own service). */
     fun viewOf(data: PlansData?, settings: ServiceSettings, f: FabricCompany) = FeatureView(
-        sw = Software.FABRIC,
+        /* 2.1.0 — whichever remote software it is on, with that software's own catalogue and plans */
+        sw = f.sw,
         name = f.name,
-        planName = Plans.nameOf(data, Software.FABRIC, f.plan, f.planName),
-        catalogue = Plans.catalogue(data, Software.FABRIC),
-        plan = Plans.ticksOf(data, settings, Software.FABRIC, f.plan),
+        planName = Plans.nameOf(data, f.sw, f.plan, f.planName),
+        catalogue = Plans.catalogue(data, f.sw),
+        plan = Plans.ticksOf(data, settings, f.sw, f.plan),
         own = f.featureOverrides,
         /* Fabric Stock's own rule: is_demo, whatever the state says (its service's resolveFeatures) */
         demo = f.isDemo

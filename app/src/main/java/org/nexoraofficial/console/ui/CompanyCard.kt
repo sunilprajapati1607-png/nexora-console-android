@@ -295,7 +295,7 @@ internal fun WeightMoreCard(
     val id = company.id
 
     ConsoleCard {
-        CardHeading("More", "on Sales & Costing only — Fabric Stock's licence is not touched")
+        CardHeading("More", "on Sales & Costing only — the other software's licences are not touched")
 
         if (company.gstin != null) {
             GroupHeading("GST")

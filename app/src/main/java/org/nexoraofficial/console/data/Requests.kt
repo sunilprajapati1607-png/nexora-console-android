@@ -101,7 +101,32 @@ data class NewCustomerForm(
     val fabricState: String = "DEMO",
     val fabricDays: String = "7",
     val fabricSeats: String = "3",
-    val fabricGrace: String = "0"
+    val fabricGrace: String = "0",
+    /** 2.1.0 — MSME ERP and Nexora Consult (any remote software but Fabric Stock), each as Fabric Stock's fields are. */
+    val others: Map<String, RemoteStart> = emptyMap()
+) {
+    /** How remote software [sw] starts for this customer. */
+    fun remote(sw: String): RemoteStart =
+        if (sw == Software.FABRIC) RemoteStart(fabric, fabricPlan, fabricState, fabricDays, fabricSeats, fabricGrace)
+        else others[sw] ?: RemoteStart()
+
+    fun withRemote(sw: String, r: RemoteStart): NewCustomerForm =
+        if (sw == Software.FABRIC) copy(fabric = r.on, fabricPlan = r.plan, fabricState = r.state, fabricDays = r.days,
+            fabricSeats = r.seats, fabricGrace = r.grace)
+        else copy(others = others + (sw to r))
+
+    /** The remote software ticked, in the table's order. */
+    val remotesOn: List<String> get() = Software.REMOTE_IDS.filter { remote(it).on }
+}
+
+/** 2.1.0 — one remote software of a new customer: ticked or not, its plan (null: its first, or none), demo or licensed, days, users, offline days. */
+data class RemoteStart(
+    val on: Boolean = false,
+    val plan: String? = null,
+    val state: String = "DEMO",
+    val days: String = "7",
+    val seats: String = "3",
+    val grace: String = "0"
 )
 
 object Requests {
@@ -231,7 +256,11 @@ object Requests {
             .put("mode", f.mode)
             .put("kind", f.kind)
         c.w?.let { b.put("companyId", it.id) }
-        if (f.software == Software.FABRIC) c.f?.let { b.put("fabricId", it.id) }
+        /* 2.1.0 — the company on the remote software paid for, as remoteId (Fabric Stock's also as fabricId, its older name) */
+        if (Software.isRemote(f.software)) c.remote(f.software)?.let {
+            b.put("remoteId", it.id)
+            if (f.software == Software.FABRIC) b.put("fabricId", it.id)
+        }
         if (f.paidOn.isNotBlank()) b.put("paidOn", f.paidOn.trim())
         if (f.reference.isNotBlank()) b.put("reference", f.reference.trim())
         if (f.note.isNotBlank()) b.put("note", f.note.trim())
@@ -274,19 +303,23 @@ object Requests {
         .put("graceDays", int(f.weightGrace, 0).coerceAtLeast(0))
 
     /** The Fabric Stock company, in its own service — linked to the Sales & Costing one made with it ([linkTo]). */
-    fun newFabric(f: NewCustomerForm, linkTo: Int?): JSONObject {
+    fun newFabric(f: NewCustomerForm, linkTo: Int?): JSONObject = newRemote(f, Software.FABRIC, linkTo)
+
+    /** 2.1.0 — the company on remote software [sw], in its own service, linked to the Sales & Costing one made with it ([linkTo]). */
+    fun newRemote(f: NewCustomerForm, sw: String, linkTo: Int?): JSONObject {
+        val r = f.remote(sw)
         val b = JSONObject()
             .put("action", "create")
             .put("name", f.name.trim())
-            .put("state", f.fabricState)
-            .put("days", int(f.fabricDays, 7).coerceAtLeast(1))
-            .put("seats", int(f.fabricSeats, 3).coerceAtLeast(1))
-            .put("graceDays", int(f.fabricGrace, 0).coerceAtLeast(0))
+            .put("state", r.state)
+            .put("days", int(r.days, 7).coerceAtLeast(1))
+            .put("seats", int(r.seats, 3).coerceAtLeast(1))
+            .put("graceDays", int(r.grace, 0).coerceAtLeast(0))
         f.gstin.trim().takeIf { it.isNotEmpty() }?.let { b.put("gstin", it.uppercase()) }
         f.email.trim().takeIf { it.isNotEmpty() }?.let { b.put("email", it) }
         f.phone.trim().takeIf { it.isNotEmpty() }?.let { b.put("phone", it) }
         linkTo?.let { b.put("linkTo", it) }
-        f.fabricPlan?.let { b.put("plan", it) }
+        r.plan?.let { b.put("plan", it) }
         if (f.admin.isNotBlank() && f.pin.isNotBlank()) b.put("adminName", f.admin.trim()).put("adminPin", f.pin)
         return b
     }

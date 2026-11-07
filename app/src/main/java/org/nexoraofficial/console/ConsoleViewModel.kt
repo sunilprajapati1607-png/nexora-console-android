@@ -42,6 +42,9 @@ import org.nexoraofficial.console.data.FabricCompany
 import org.nexoraofficial.console.data.FabricCounts
 import org.nexoraofficial.console.data.FabricDetail
 import org.nexoraofficial.console.data.ProductsData
+import org.nexoraofficial.console.data.RulesForm
+import org.nexoraofficial.console.data.SoftwareRules
+import org.nexoraofficial.console.data.SoftwareRulesData
 import org.nexoraofficial.console.data.SoftwareCounts
 import org.nexoraofficial.console.data.SoftwareFilter
 import org.nexoraofficial.console.data.CustQuick
@@ -319,6 +322,8 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         internal set
     /** The Fabric Stock company whose screen (or tab) is showing — read again after a refresh or a change. */
     var fabricOpen by mutableStateOf<Int?>(null)
+    /** 2.1.0 — the software that company is on (fabric, erp, consult). */
+    var fabricOpenSw by mutableStateOf(Software.FABRIC)
     private var fabricDetailJob: Job? = null
 
     /**
@@ -327,21 +332,42 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
      * not come at all, or it came and Fabric Stock's own service was not
      * reachable (asleep, or refusing the key).
      */
-    val fabricProblem: String?
-        get() {
-            if (productsLoad == Load.FAILED) return productsError ?: "The software list could not be read."
-            val p = products ?: return null
-            val f = p.fabric ?: return "This service does not list Fabric Stock."
-            return if (f.ok) null else f.problem
-        }
+    val fabricProblem: String? get() = remoteProblem(Software.FABRIC)
 
     /** Fabric Stock's live companies — none while it is not connected. */
-    val fabricCompanies: List<FabricCompany>
-        get() = if (fabricProblem != null) emptyList()
-        else products?.fabric?.companies.orEmpty().filter { it.deletedAt == null }
+    val fabricCompanies: List<FabricCompany> get() = remoteCompanies(Software.FABRIC)
 
     /** Whether Fabric Stock's companies are in hand (so "none linked" really means none). */
-    val fabricReady: Boolean get() = products?.fabric != null && fabricProblem == null
+    val fabricReady: Boolean get() = remoteReady(Software.FABRIC)
+
+    /**
+     * 2.1.0 — the same for any software the console service reaches (Fabric Stock, MSME ERP, Nexora Consult):
+     * why it cannot be shown (the service's own words — "add NEXORA_CONSULT_ADMIN_KEY on nexora-api" — never
+     * "0 customers"), null while it can or before it has been asked.
+     */
+    fun remoteProblem(sw: String): String? {
+        if (productsLoad == Load.FAILED) return productsError ?: "The software list could not be read."
+        val p = products ?: return null
+        val r = p.of(sw) ?: return "This service does not list ${Software.name(sw)}."
+        return if (r.ok) null else r.problem
+    }
+
+    /** 2.1.0 — whether the console service could not read [sw] because it has no key for it (waiting will not help). */
+    fun remoteKeyProblem(sw: String): Boolean = products?.of(sw)?.let { !it.ok && it.keyProblem } == true
+
+    /** 2.1.0 — [sw]'s live companies, each marked with its software — none while it is not connected. */
+    fun remoteCompanies(sw: String): List<FabricCompany> =
+        if (remoteProblem(sw) != null) emptyList()
+        else products?.of(sw)?.companies.orEmpty().filter { it.deletedAt == null }.map { if (it.sw == sw) it else it.copy(sw = sw) }
+
+    /** 2.1.0 — whether [sw]'s companies are in hand. */
+    fun remoteReady(sw: String): Boolean = products?.of(sw) != null && remoteProblem(sw) == null
+
+    /** 2.1.0 — one company on [sw] by its id. */
+    fun remoteById(sw: String, id: Int): FabricCompany? = remoteCompanies(sw).find { it.id == id }
+
+    /** 2.1.0 — the companies on [sw] with no Sales & Costing company beside them — what may be linked to one. */
+    fun remoteOnly(sw: String): List<FabricCompany> = CompanyList.fabricOnly(data.companies, remoteCompanies(sw))
 
     fun fabricById(id: Int): FabricCompany? = fabricCompanies.find { it.id == id }
 
@@ -388,7 +414,25 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     internal var today: () -> LocalDate = { LocalDate.now() }
 
     /** Every customer once, with every software it uses. */
-    val customers: List<Customer> get() = Customers.of(data.companies, fabricCompanies)
+    val customers: List<Customer> get() = Customers.of(data.companies, Software.REMOTE_IDS.associateWith { remoteCompanies(it) })
+
+    /* ---- 2.1.0: each software's own demo rules, kept on its own server ---- */
+
+    /* internal (not private) so the tests can draw them from made-up rules, as `data` */
+    var rules by mutableStateOf<SoftwareRulesData?>(null)
+        internal set
+    var rulesLoad by mutableStateOf(Load.IDLE)
+        internal set
+    var rulesError by mutableStateOf<String?>(null)
+        internal set
+    private var rulesJob: Job? = null
+    private var rulesGen = 0
+
+    /** [sw]'s demo rules, or null while they are on their way (or the list could not be read). */
+    fun rulesOf(sw: String): SoftwareRules? = rules?.of(sw)
+
+    /** How many days a new demo on [sw] runs: its own rule when read, else 7. */
+    fun demoDays(sw: String): Int = rulesOf(sw)?.takeIf { it.ok }?.trialDays?.takeIf { it > 0 } ?: 7
 
     fun customer(key: String): Customer? = Customers.find(customers, key)
 
@@ -426,6 +470,8 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
     /* Software & plans */
     var planSoft by mutableStateOf<String?>(null)
     var planQuery by mutableStateOf("")
+    /** 2.1.0 — "plans", or "rules": each software's own demo rules. */
+    var planTab by mutableStateOf("plans")
 
     /** A plan's name by its code ("GOLD" → "Gold"), on [sw]; [fallback] is the name the company itself came with. */
     fun planName(sw: String, code: String?, fallback: String? = null): String = Plans.nameOf(plans, sw, code, fallback)
@@ -495,10 +541,12 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 loadBroadcasts()
                 /* 1.9.0 — and the other software, last and apart: Fabric Stock may take a minute to wake */
                 loadProducts()
-                fabricOpen?.let { loadFabricDetail(it, quiet = true) }
+                fabricOpen?.let { loadFabricDetail(it, quiet = true, sw = fabricOpenSw) }
                 /* 2.0.0 — the plans of every software and the payments, quietly, apart from the rest */
                 loadPlans()
                 loadPayments()
+                /* 2.1.0 — and each software's own demo rules */
+                loadRules()
                 /* And whether a newer build of this application exists. */
                 checkForUpdate()
             } catch (e: Exception) {
@@ -536,6 +584,11 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         software = SoftwareFilter.ALL
         fabricDetail = null
         fabricOpen = null
+        fabricOpenSw = Software.FABRIC
+        rulesJob?.cancel()
+        rules = null
+        rulesLoad = Load.IDLE
+        rulesError = null
         plansJob?.cancel()
         paymentsJob?.cancel()
         plans = null
@@ -792,16 +845,18 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
      * [done] gets the new customer's key (to open its window), or null when nothing was made.
      */
     fun createCustomer(done: (String?) -> Unit = {}) {
-        /* Fabric Stock on its first plan when it has plans of its own and none was chosen (the one the screen shows) */
-        val f = newCustomer.let { n ->
-            if (n.fabric && n.fabricPlan == null) n.copy(fabricPlan = plans?.fabric?.takeIf { it.supported }?.livePlans?.firstOrNull()?.code) else n
+        /* each remote software on its first plan when it has plans of its own and none was chosen (the one the screen shows) */
+        val f = Software.REMOTE_IDS.fold(newCustomer) { n, sw ->
+            val r = n.remote(sw)
+            if (r.on && r.plan == null) n.withRemote(sw, r.copy(plan = plans?.block(sw)?.takeIf { it.supported }?.livePlans?.firstOrNull()?.code))
+            else n
         }
         val name = f.name.trim()
         if (name.isEmpty()) {
             say("A company name is required.", Msg.Kind.ERR)
             return
         }
-        if (!f.weight && !f.fabric) {
+        if (!f.weight && f.remotesOn.isEmpty()) {
             say("Tick at least one software.", Msg.Kind.ERR)
             return
         }
@@ -810,8 +865,8 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             val notes = ArrayList<String>()
             var weightId: Int? = null
             var weightKey: String? = null
-            var fabricId: Int? = null
-            var fabricKey: String? = null
+            /* 2.1.0 — each remote software made: its id and its key, in the table's order */
+            val made = LinkedHashMap<String, Pair<Int?, String?>>()
             try {
                 if (f.weight) {
                     val r = api.company(Requests.newWeight(f))
@@ -831,27 +886,32 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 }
-                if (f.fabric) {
+                for (sw in f.remotesOn) {
                     try {
-                        val r = api.fabric(Requests.newFabric(f, weightId))
+                        val r = api.remoteAction(sw, Requests.newRemote(f, sw, weightId))
                         val co = r.optJSONObject("company")
-                        fabricId = co?.optInt("id")?.takeIf { it > 0 }
-                        fabricKey = co?.optString("licenceKey")?.takeIf { it.isNotEmpty() }
+                        made[sw] = co?.optInt("id")?.takeIf { it > 0 } to co?.optString("licenceKey")?.takeIf { it.isNotEmpty() }
                     } catch (e: Exception) {
-                        notes += "Fabric Stock: " + ((e as? ApiError)?.message ?: "something went wrong.")
+                        notes += Software.name(sw) + ": " + ((e as? ApiError)?.message ?: "something went wrong.")
                     }
                 }
                 newCustomer = NewCustomerForm()
+                val keys = listOfNotNull(weightKey) + made.values.mapNotNull { it.second }
                 val said = "$name made." +
                     (weightKey?.let { " Sales & Costing key $it." } ?: "") +
-                    (fabricKey?.let { " Fabric Stock key $it." } ?: "") +
-                    (if (weightKey != null && fabricKey != null) " Two keys — give both to the customer." else "") +
+                    made.entries.joinToString("") { (sw, m) -> m.second?.let { " ${Software.name(sw)} key $it." } ?: "" } +
+                    (when (keys.size) {
+                        0, 1 -> ""
+                        2 -> " Two keys — give both to the customer."
+                        else -> " ${keys.size} keys — give each to the customer."
+                    }) +
                     (if (notes.isEmpty()) "" else " " + notes.joinToString(" "))
                 say(said, if (notes.isEmpty()) Msg.Kind.OK else Msg.Kind.WARN, holdMs = 20_000)
-                /* the window opens once the new customer is in the list (load reads Fabric Stock again too) */
-                val made = weightId?.let { "w$it" } ?: fabricId?.let { "f$it" }
-                if (weightId != null) load(onDone = { done(made) })
-                else if (fabricId != null) loadProducts(onDone = { done(made) })
+                /* the window opens once the new customer is in the list (load reads the other software again too) */
+                val first = made.entries.firstOrNull { it.value.first != null }
+                val key = weightId?.let { "w$it" } ?: first?.let { (sw, m) -> "${Software.remote(sw)?.prefix ?: 'f'}${m.first}" }
+                if (weightId != null) load(onDone = { done(key) })
+                else if (first != null) loadProducts(onDone = { done(key) })
                 else done(null)
             } catch (e: Exception) {
                 say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
@@ -939,18 +999,19 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             busy = true
             var ok = true
             try {
-                /* a refusal (400 with its sentence) is thrown in the service's own words */
-                val r = api.fabric(body)
+                /* a refusal (400 with its sentence) is thrown in the service's own words;
+                   2.1.0 — sent to the company's own software (fabric, erp, consult) */
+                val r = api.remoteAction(f.sw, body)
                 val warn = r.optString("warning")
                 say(warn.ifEmpty { "Saved." }, if (warn.isNotEmpty()) Msg.Kind.WARN else Msg.Kind.OK)
             } catch (ex: Exception) {
                 ok = false
-                say("Fabric Stock: " + ((ex as? ApiError)?.message ?: "something went wrong."), Msg.Kind.ERR, holdMs = 12_000)
+                say(Software.name(f.sw) + ": " + ((ex as? ApiError)?.message ?: "something went wrong."), Msg.Kind.ERR, holdMs = 12_000)
             } finally {
                 busy = false
             }
             loadProducts()
-            fabricOpen?.let { loadFabricDetail(it, quiet = true) }
+            fabricOpen?.let { loadFabricDetail(it, quiet = true, sw = fabricOpenSw) }
             if (ok && planOrFeatures) loadPlans()
             done(ok)
         }
@@ -961,7 +1022,8 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
      * key), made with the Fabric Stock company's details, then linked to it. [done] gets the customer's
      * new key ("w…").
      */
-    fun startWeightFor(f: FabricCompany, done: (String?) -> Unit = {}) {
+    /* 2.1.0 — [also]: the customer's companies on its other remote software, linked to the new one too */
+    fun startWeightFor(f: FabricCompany, also: List<FabricCompany> = emptyList(), done: (String?) -> Unit = {}) {
         viewModelScope.launch {
             busy = true
             try {
@@ -975,10 +1037,13 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 val co = r.optJSONObject("company")
                 val id = co?.optInt("id") ?: 0
                 val key = co?.optString("licence_key").orEmpty()
-                val linked = runCatching { api.fabric(JSONObject().put("action", "link").put("id", f.id).put("companyId", id)) }.isSuccess
+                val linked = runCatching { api.remoteAction(f.sw, JSONObject().put("action", "link").put("id", f.id).put("companyId", id)) }.isSuccess
+                also.filter { it.sw != f.sw || it.id != f.id }.forEach { o ->
+                    runCatching { api.remoteAction(o.sw, JSONObject().put("action", "link").put("id", o.id).put("companyId", id)) }
+                }
                 say(
                     "${f.name} now has Sales & Costing. Its Sales & Costing licence key is $key." +
-                        (if (linked) "" else " It could not be linked to its Fabric Stock company yet — link it from the Company tab."),
+                        (if (linked) "" else " It could not be linked to its ${Software.name(f.sw)} company yet — link it from the Company tab."),
                     if (linked) Msg.Kind.OK else Msg.Kind.WARN, holdMs = 20_000
                 )
                 load(onDone = { done(if (id > 0) "w$id" else null) })
@@ -1123,17 +1188,20 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         else a.message ?: "The software list could not be read."
     }
 
-    /** One Fabric Stock company's people and computers and phones. [quiet]: a re-read; a failure leaves what is shown. */
-    fun loadFabricDetail(id: Int, quiet: Boolean = false) {
+    /**
+     * One Fabric Stock company's people and computers and phones. [quiet]: a re-read; a failure leaves what is shown.
+     * 2.1.0 — [sw]: any software the console service reaches (fabric, erp, consult).
+     */
+    fun loadFabricDetail(id: Int, quiet: Boolean = false, sw: String = Software.FABRIC) {
         if (key.isBlank()) return
         val gen = ++detailGen
         fabricDetailJob?.cancel()
-        if (fabricDetail?.company?.id != id) fabricDetail = null
+        if (fabricDetail?.company?.id != id || fabricDetail?.company?.sw != sw) fabricDetail = null
         if (!quiet) fabricDetailError = null
         fabricDetailBusy = true
         fabricDetailJob = viewModelScope.launch {
             try {
-                val d = api.fabricDetail(id)
+                val d = api.remoteDetail(sw, id)
                 if (gen != detailGen) return@launch
                 fabricDetail = d
                 fabricDetailError = null
@@ -1153,11 +1221,18 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
      * Fabric Stock is asleep, FABRIC_KEY when it refuses the key) — and then
      * Fabric Stock's companies, and the one open, are read again.
      */
-    fun fabricAction(body: JSONObject, okText: String? = null, then: (JSONObject) -> Unit = {}) {
+    fun fabricAction(body: JSONObject, okText: String? = null, then: (JSONObject) -> Unit = {}) =
+        remoteAction(Software.FABRIC, body, okText, then)
+
+    /**
+     * 2.1.0 — every change to a company on any software the console service reaches goes through here:
+     * POST /admin/api/<sw> (fabric, erp, consult), the same actions for each, told the same way.
+     */
+    fun remoteAction(sw: String, body: JSONObject, okText: String? = null, then: (JSONObject) -> Unit = {}) {
         viewModelScope.launch {
             busy = true
             try {
-                val r = api.fabric(body)
+                val r = api.remoteAction(sw, body)
                 val warn = r.optString("warning")
                 when {
                     warn.isNotEmpty() -> say(warn, Msg.Kind.WARN)
@@ -1165,7 +1240,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 then(r)
                 loadProducts()
-                fabricOpen?.let { loadFabricDetail(it, quiet = true) }
+                fabricOpen?.let { loadFabricDetail(it, quiet = true, sw = fabricOpenSw) }
             } catch (e: Exception) {
                 say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
             } finally {
@@ -1174,69 +1249,71 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun fabricUpdate(id: Int, okText: String, fill: JSONObject.() -> Unit) =
-        fabricAction(JSONObject().put("action", "update").put("id", id).apply(fill), okText)
+    private fun fabricUpdate(id: Int, okText: String, sw: String = Software.FABRIC, fill: JSONObject.() -> Unit) =
+        remoteAction(sw, JSONObject().put("action", "update").put("id", id).apply(fill), okText)
 
     /** A demo made a paying licence: a year from today. */
     fun fabricMakeLicensed(f: FabricCompany) =
-        fabricUpdate(f.id, "${f.name} is licensed on Fabric Stock for a year.") { put("state", "LICENSED").put("days", 365) }
+        fabricUpdate(f.id, "${f.name} is licensed on ${Software.name(f.sw)} for a year.", f.sw) { put("state", "LICENSED").put("days", 365) }
 
     /**
      * [add] days more. Fabric Stock renews by starting a new period from
      * today, so the days still left are sent with them (FabricCompany.renewDays)
-     * and nothing already paid for is lost.
+     * and nothing already paid for is lost. 2.1.0 — every remote software renews the same way.
      */
     fun fabricAddDays(f: FabricCompany, add: Int) =
-        fabricUpdate(f.id, "Fabric Stock now ends on ${Fmt.day(f.renewEnd(add).toString())}.") { put("days", f.renewDays(add)) }
+        fabricUpdate(f.id, "${Software.name(f.sw)} now ends on ${Fmt.day(f.renewEnd(add).toString())}.", f.sw) { put("days", f.renewDays(add)) }
 
-    fun fabricSeats(id: Int, seats: Int) = fabricUpdate(id, "Seats saved.") { put("seats", seats) }
-    fun fabricGrace(id: Int, days: Int) = fabricUpdate(id, "Offline days saved.") { put("graceDays", days) }
-    fun fabricRename(id: Int, name: String) = fabricUpdate(id, "Renamed.") { put("name", name.trim()) }
-    fun fabricGstin(id: Int, gstin: String) = fabricUpdate(id, "GSTIN saved.") { put("gstin", gstin.trim().uppercase()) }
-    fun fabricEmail(id: Int, email: String) = fabricUpdate(id, "Email saved.") { put("email", email.trim()) }
-    fun fabricPhone(id: Int, phone: String) = fabricUpdate(id, "Mobile saved.") { put("phone", phone.trim()) }
-    fun fabricNote(id: Int, notes: String) = fabricUpdate(id, "Note saved.") { put("notes", notes.trim()) }
+    fun fabricSeats(id: Int, seats: Int, sw: String = Software.FABRIC) = fabricUpdate(id, "Seats saved.", sw) { put("seats", seats) }
+    fun fabricGrace(id: Int, days: Int, sw: String = Software.FABRIC) = fabricUpdate(id, "Offline days saved.", sw) { put("graceDays", days) }
+    fun fabricRename(id: Int, name: String, sw: String = Software.FABRIC) = fabricUpdate(id, "Renamed.", sw) { put("name", name.trim()) }
+    fun fabricGstin(id: Int, gstin: String, sw: String = Software.FABRIC) = fabricUpdate(id, "GSTIN saved.", sw) { put("gstin", gstin.trim().uppercase()) }
+    fun fabricEmail(id: Int, email: String, sw: String = Software.FABRIC) = fabricUpdate(id, "Email saved.", sw) { put("email", email.trim()) }
+    fun fabricPhone(id: Int, phone: String, sw: String = Software.FABRIC) = fabricUpdate(id, "Mobile saved.", sw) { put("phone", phone.trim()) }
+    fun fabricNote(id: Int, notes: String, sw: String = Software.FABRIC) = fabricUpdate(id, "Note saved.", sw) { put("notes", notes.trim()) }
 
     fun fabricSuspend(f: FabricCompany) =
-        fabricAction(JSONObject().put("action", "suspend").put("id", f.id), "${f.name} is suspended on Fabric Stock.")
+        remoteAction(f.sw, JSONObject().put("action", "suspend").put("id", f.id), "${f.name} is suspended on ${Software.name(f.sw)}.")
 
     fun fabricResume(f: FabricCompany) =
-        fabricAction(JSONObject().put("action", "resume").put("id", f.id), "${f.name} runs on Fabric Stock again.")
+        remoteAction(f.sw, JSONObject().put("action", "resume").put("id", f.id), "${f.name} runs on ${Software.name(f.sw)} again.")
 
-    fun fabricAdministrator(id: Int, name: String, pin: String, email: String = "") =
-        fabricAction(
+    fun fabricAdministrator(id: Int, name: String, pin: String, email: String = "", sw: String = Software.FABRIC) =
+        remoteAction(
+            sw,
             JSONObject().put("action", "adminuser").put("id", id).put("name", name.trim()).put("pin", pin)
                 .apply { if (email.isNotBlank()) put("email", email.trim()) },
             "Done."
         )
 
-    fun fabricPasscode(id: Int, loginId: String, passcode: String) =
-        fabricAction(
+    fun fabricPasscode(id: Int, loginId: String, passcode: String, sw: String = Software.FABRIC) =
+        remoteAction(
+            sw,
             JSONObject().put("action", "passcode").put("id", id).put("passcode", passcode)
                 .apply { if (loginId.isNotBlank()) put("loginId", loginId.trim()) },
             "Done."
         )
 
-    fun fabricSignOut(id: Int, userId: Any) =
-        fabricAction(JSONObject().put("action", "usersignout").put("id", id).put("userId", userId), "Signed out.")
+    fun fabricSignOut(id: Int, userId: Any, sw: String = Software.FABRIC) =
+        remoteAction(sw, JSONObject().put("action", "usersignout").put("id", id).put("userId", userId), "Signed out.")
 
     /** Withdraw a Fabric Stock computer or phone; Give back undoes only what Nexora withdrew. */
-    fun fabricRevoke(deviceId: Any) =
-        fabricAction(JSONObject().put("action", "revoke").put("deviceId", deviceId), "Withdrawn.")
+    fun fabricRevoke(deviceId: Any, sw: String = Software.FABRIC) =
+        remoteAction(sw, JSONObject().put("action", "revoke").put("deviceId", deviceId), "Withdrawn.")
 
-    fun fabricGiveBack(deviceId: Any) =
-        fabricAction(JSONObject().put("action", "restore").put("deviceId", deviceId), "Given back.")
+    fun fabricGiveBack(deviceId: Any, sw: String = Software.FABRIC) =
+        remoteAction(sw, JSONObject().put("action", "restore").put("deviceId", deviceId), "Given back.")
 
-    fun fabricLink(id: Int, companyId: Int, name: String) =
-        fabricAction(JSONObject().put("action", "link").put("id", id).put("companyId", companyId), "Linked to $name.")
+    fun fabricLink(id: Int, companyId: Int, name: String, sw: String = Software.FABRIC) =
+        remoteAction(sw, JSONObject().put("action", "link").put("id", id).put("companyId", companyId), "Linked to $name.")
 
     /** Two different companies, even though the GSTIN is the same. */
-    fun fabricApart(id: Int) =
-        fabricAction(JSONObject().put("action", "apart").put("id", id), "Kept apart — two different companies.")
+    fun fabricApart(id: Int, sw: String = Software.FABRIC) =
+        remoteAction(sw, JSONObject().put("action", "apart").put("id", id), "Kept apart — two different companies.")
 
     /** Forget the hand link; the GSTIN rule decides again. */
-    fun fabricUnlink(id: Int) =
-        fabricAction(JSONObject().put("action", "unlink").put("id", id), "Unlinked.")
+    fun fabricUnlink(id: Int, sw: String = Software.FABRIC) =
+        remoteAction(sw, JSONObject().put("action", "unlink").put("id", id), "Unlinked.")
 
     /**
      * Fabric Stock for a Weight Calc company that has none: a 7-day demo, or a
@@ -1244,11 +1321,34 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
      * GSTIN, email, mobile, seats and offline days to start from — and linked
      * to it at once (linkTo).
      */
-    fun startFabric(co: Company, demo: Boolean) =
-        fabricAction(
-            fabricCreateBody(co.name, if (demo) "DEMO" else "LICENSED", if (demo) 7 else 365, co.seats, co.graceDays,
+    fun startFabric(co: Company, demo: Boolean) = startRemote(Software.FABRIC, co, demo)
+
+    /**
+     * 2.1.0 — "Start <software> for this customer": the same for any remote software — a demo as long as that
+     * software's own demo rules say (7 days when they could not be read), or a year's licence; created with linkTo.
+     */
+    fun startRemote(sw: String, co: Company, demo: Boolean) {
+        val n = Software.name(sw)
+        remoteAction(
+            sw,
+            fabricCreateBody(co.name, if (demo) "DEMO" else "LICENSED", if (demo) demoDays(sw) else 365, co.seats, co.graceDays,
                 co.gstin, co.email, co.phone).put("linkTo", co.id)
-        ) { r -> say(fabricCreated(r, "Fabric Stock started for ${co.name}"), Msg.Kind.OK, holdMs = 15_000) }
+        ) { r -> say(fabricCreated(r, "$n started for ${co.name}", n), Msg.Kind.OK, holdMs = 15_000) }
+    }
+
+    /**
+     * 2.1.0 — a remote software for a customer with no Sales & Costing: made with its details and its GSTIN, so
+     * it is shown with the customer's other software (one customer per GSTIN).
+     */
+    fun startRemoteFor(sw: String, x: Customer, demo: Boolean) {
+        val lead = x.lead ?: return
+        val n = Software.name(sw)
+        remoteAction(
+            sw,
+            fabricCreateBody(x.name, if (demo) "DEMO" else "LICENSED", if (demo) demoDays(sw) else 365, lead.seats, lead.graceDays,
+                x.gstin, x.email, x.phone)
+        ) { r -> say(fabricCreated(r, "$n started for ${x.name}", n), Msg.Kind.OK, holdMs = 15_000) }
+    }
 
     private fun fabricCreateBody(
         name: String, state: String, days: Int, seats: Int, graceDays: Int,
@@ -1267,9 +1367,71 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     /* "… Fabric Stock licence key NFS-… — give this to the customer." */
-    private fun fabricCreated(r: JSONObject, lead: String): String {
+    private fun fabricCreated(r: JSONObject, lead: String, name: String = Software.FABRIC_NAME): String {
         val key = r.optJSONObject("company")?.optString("licenceKey").orEmpty()
-        return if (key.isEmpty()) "$lead." else "$lead. Fabric Stock licence key $key — give this to the customer; it is not the Sales & Costing key."
+        return if (key.isEmpty()) "$lead." else "$lead. $name licence key $key — give this to the customer; it is not the Sales & Costing key."
+    }
+
+    /* ---------- 2.1.0: each software's own demo rules ---------- */
+
+    /** Every software's demo rules. Quiet: what went wrong is said where they are shown, never as a red strip. */
+    fun loadRules(onDone: (() -> Unit)? = null) {
+        if (key.isBlank()) return
+        val gen = ++rulesGen
+        rulesJob?.cancel()
+        rulesLoad = Load.LOADING
+        rulesJob = viewModelScope.launch {
+            try {
+                val r = api.softwareSettings()
+                if (gen != rulesGen) return@launch
+                rules = r
+                rulesError = null
+                rulesLoad = Load.READY
+            } catch (e: Exception) {
+                if (gen != rulesGen || e is CancellationException) return@launch
+                rulesError = (e as? ApiError)?.let {
+                    if (it.status == 404) "This service keeps no demo rules per software yet — it needs the service update." else it.message
+                } ?: "The demo rules could not be read."
+                rulesLoad = Load.FAILED
+            } finally {
+                if (gen == rulesGen) onDone?.invoke()
+            }
+        }
+    }
+
+    /**
+     * 2.1.0 — one software's demo rules changed, on that software's own server (POST /admin/api/software-settings
+     * for that ONE software). Values out of range are refused here, before anything is sent; a refusal from the
+     * service is shown in its own words. [done] is told whether it was saved.
+     */
+    fun saveRules(sw: String, form: RulesForm, done: (Boolean) -> Unit = {}) {
+        form.problem(sw)?.let {
+            say(it, Msg.Kind.ERR)
+            done(false)
+            return
+        }
+        viewModelScope.launch {
+            busy = true
+            var ok = true
+            try {
+                val r = api.saveSoftwareSettings(form.body(sw))
+                val saved = r.optJSONObject("settings")?.let { s ->
+                    SoftwareRules.from(JSONObject().put("id", sw).put("ok", true).put("settings", s))
+                }
+                if (saved != null) {
+                    val all = rules?.software.orEmpty()
+                    rules = SoftwareRulesData(if (all.any { it.id == sw }) all.map { if (it.id == sw) saved else it } else all + saved)
+                }
+                say("${Software.name(sw)}'s demo rules are saved on its own server.", Msg.Kind.OK)
+            } catch (e: Exception) {
+                ok = false
+                say(Software.name(sw) + ": " + ((e as? ApiError)?.message ?: "something went wrong."), Msg.Kind.ERR, holdMs = 12_000)
+            } finally {
+                busy = false
+            }
+            if (ok) loadRules()
+            done(ok)
+        }
     }
 
     /* ---------- 2.0.0: the plans and the payments ---------- */
@@ -1388,7 +1550,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             c == null -> presetSw ?: Software.WEIGHT
             presetSw != null && c.has(presetSw) -> presetSw
             c.w != null -> Software.WEIGHT
-            else -> Software.FABRIC
+            else -> c.softwares.firstOrNull() ?: Software.FABRIC
         }
         return PaymentForm(customerKey = c?.key.orEmpty(), software = sw, paidOn = today().toString())
     }

@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.nexoraofficial.console.ConsoleViewModel
+import org.nexoraofficial.console.Load
+import org.nexoraofficial.console.Msg
 import org.nexoraofficial.console.data.Customers
 import org.nexoraofficial.console.data.Fmt
 import org.nexoraofficial.console.data.Money
@@ -59,7 +61,7 @@ fun ValidityScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, 
         item(key = "soft") {
             Box(page) {
                 QuickRow(
-                    listOf(Quick("ANY", "Any software"), Quick(Software.WEIGHT, Software.WEIGHT_NAME), Quick(Software.FABRIC, Software.FABRIC_NAME)),
+                    listOf(Quick("ANY", "Any software")) + Software.LICENSED.map { Quick(it, Software.name(it)) },
                     vm.validitySoft ?: "ANY"
                 ) { vm.validitySoft = it.takeIf { s -> s != "ANY" } }
             }
@@ -80,13 +82,22 @@ fun ValidityScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, 
                             vm.validityQuick = ValQuick.ENDED
                         },
                         Fig("Licences", all.size.toString(),
-                            "${all.count { it.sw == Software.WEIGHT }} Sales & Costing · ${all.count { it.sw == Software.FABRIC }} Fabric Stock", 1)
+                            Software.LICENSED.filter { sw -> sw == Software.WEIGHT || sw == Software.FABRIC || all.any { it.sw == sw } }
+                                .joinToString(" · ") { sw -> "${all.count { it.sw == sw }} ${Software.name(sw)}" }, 1)
                     )
                 )
             }
         }
         if (vm.fabricProblem != null) {
             item(key = "fabric") { Box(page) { FabricNotConnectedCard(vm, vm.fabricProblem!!) } }
+        }
+        /* 2.1.0 — MSME ERP and Nexora Consult not reachable: one line each, in the service's own words */
+        if (vm.productsLoad != Load.FAILED && vm.products != null) {
+            Software.REMOTE_IDS.filter { it != Software.FABRIC && (vm.validitySoft == null || vm.validitySoft == it) }.forEach { sw ->
+                vm.remoteProblem(sw)?.let { p ->
+                    item(key = "$sw-off") { Box(page) { MessageStrip(Msg("${Software.name(sw)} is not connected: $p", Msg.Kind.WARN), onDismiss = {}) } }
+                }
+            }
         }
         item(key = "heading") {
             Box(page) { ListHeading("${rows.size} licence" + (if (rows.size == 1) "" else "s"), "ending first · tap for the customer") }

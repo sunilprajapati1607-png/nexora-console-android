@@ -84,7 +84,7 @@ fun PaymentsScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, 
             Box(page) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     QuickRow(
-                        listOf(Quick("ANY", "Any software"), Quick(Software.WEIGHT, Software.WEIGHT_NAME), Quick(Software.FABRIC, Software.FABRIC_NAME)),
+                        listOf(Quick("ANY", "Any software")) + Software.LICENSED.map { Quick(it, Software.name(it)) },
                         vm.paySoft ?: "ANY"
                     ) { vm.paySoft = it.takeIf { s -> s != "ANY" } }
                     QuickRow(listOf(Quick("ANY", "Any kind")) + PaymentKinds.ALL.map { Quick(it, PaymentKinds.word(it)) }, vm.payKind ?: "ANY") {
@@ -100,14 +100,15 @@ fun PaymentsScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, 
         }
         item(key = "figs") {
             Box(page) {
-                val w = rows.filter { it.software == Software.WEIGHT }
-                val f = rows.filter { it.software == Software.FABRIC }
                 val ren = rows.filter { it.kind == "RENEWAL" }
                 val new = rows.filter { it.kind == "NEW" }
+                /* 2.1.0 — every software's own takings: Sales & Costing and Fabric Stock always, the others once they have any */
+                val shown = Software.LICENSED.filter { sw -> sw == Software.WEIGHT || sw == Software.FABRIC || rows.any { it.software == sw } }
                 FigGrid(
-                    listOf(
-                        Fig(Software.WEIGHT_NAME, Money.rupees(PayFilter.sum(w)), "${w.size} payment" + (if (w.size == 1) "" else "s"), 0),
-                        Fig(Software.FABRIC_NAME, Money.rupees(PayFilter.sum(f)), "${f.size} payment" + (if (f.size == 1) "" else "s"), 1),
+                    shown.mapIndexed { i, sw ->
+                        val l = rows.filter { it.software == sw }
+                        Fig(Software.name(sw), Money.rupees(PayFilter.sum(l)), "${l.size} payment" + (if (l.size == 1) "" else "s"), i % 2)
+                    } + listOf(
                         Fig("Renewals", Money.rupees(PayFilter.sum(ren)), "${ren.size} renewal" + (if (ren.size == 1) "" else "s"), 2),
                         Fig("New customers", Money.rupees(PayFilter.sum(new)), "${new.size} first payment" + (if (new.size == 1) "" else "s"), 3)
                     )
@@ -282,7 +283,7 @@ fun RecordPaymentScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingVal
     val f = vm.payForm
     val all = vm.customers
     val x = vm.customer(f.customerKey)
-    val sws = listOfNotNull(if (x?.w != null) Software.WEIGHT else null, if (x?.f != null) Software.FABRIC else null)
+    val sws = x?.softwares.orEmpty()
     val save = { vm.recordPayment(vm.payForm) { p -> if (p != null) nav.back() } }
 
     LazyColumn(
@@ -321,14 +322,13 @@ fun RecordPaymentScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingVal
                                         title = "Which customer paid?",
                                         body = "Each software has its own licence; the payment is recorded against the one you choose next.",
                                         options = all.mapIndexed { i, cu ->
-                                            Ask.Pick.Option(i, cu.name, listOfNotNull(cu.gstin, if (cu.w != null) Software.WEIGHT_NAME else null,
-                                                if (cu.f != null) Software.FABRIC_NAME else null).joinToString(" · "))
+                                            Ask.Pick.Option(i, cu.name, (listOfNotNull(cu.gstin) + cu.softwares.map { Software.name(it) }).joinToString(" · "))
                                         },
                                         confirmText = "Choose",
                                         empty = "No customers yet.",
                                         onPick = { i ->
                                             all.getOrNull(i)?.let { cu ->
-                                                val sw = if (cu.has(vm.payForm.software)) vm.payForm.software else if (cu.w != null) Software.WEIGHT else Software.FABRIC
+                                                val sw = if (cu.has(vm.payForm.software)) vm.payForm.software else cu.softwares.firstOrNull() ?: Software.WEIGHT
                                                 vm.payForm = vm.payForm.copy(customerKey = cu.key, software = sw)
                                             }
                                         }
@@ -347,11 +347,11 @@ fun RecordPaymentScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingVal
                         Spacer(Modifier.height(8.dp))
                     }
                     val lic = x?.sub(f.software)
-                    val planCode = if (f.software == Software.FABRIC) x?.f?.plan else x?.w?.plan
+                    val planCode = x?.let { Customers.planCode(it, f.software) }
                     ReadField(
                         "Plan",
                         if (x == null || lic == null) "—"
-                        else vm.planName(f.software, planCode, if (f.software == Software.FABRIC) x.f?.planName else null) + " · " +
+                        else vm.planName(f.software, planCode, Customers.planFallback(x, f.software)) + " · " +
                             Customers.stateWord(lic.state) + " · ends " + Fmt.day(lic.at)
                     )
                     Spacer(Modifier.height(10.dp))

@@ -13,8 +13,8 @@ android {
         applicationId = "org.nexoraofficial.console"
         minSdk = 26
         targetSdk = 34
-        versionCode = 23
-        versionName = "2.0.1"
+        versionCode = 24
+        versionName = "2.1.0"
 
         /* The service the console talks to. Changed here, not in code, so a
            staging build is one line. It is also overridable at run time from
@@ -68,7 +68,11 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         /* 1.6.0 — every screen drawn on the computer, phone-sized, from sample companies (as Nexora Mobile) */
-        unitTests.all { it.systemProperty("roborazzi.test.record", "true") }
+        unitTests.all {
+            it.systemProperty("roborazzi.test.record", "true")
+            /* 2.1.0 — ~190 tests, a fifth of them drawing whole screens: the test JVM's default 512 MB ran out */
+            it.maxHeapSize = "2g"
+        }
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }

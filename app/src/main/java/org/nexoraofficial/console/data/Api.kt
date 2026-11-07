@@ -185,13 +185,36 @@ class Api(
     }
 
     /** One change to a Fabric Stock company ({action, ...}); every failure is thrown in the service's own words. */
-    suspend fun fabric(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        checked("POST", "/admin/api/fabric", body)
+    suspend fun fabric(body: JSONObject): JSONObject = remoteAction(Software.FABRIC, body)
+
+    /**
+     * 2.1.0 — one change to a company on any software the console service reaches (fabric, erp, consult):
+     * POST /admin/api/<sw>, the same actions for each. A software that is not one of them is refused here,
+     * before anything is sent.
+     */
+    suspend fun remoteAction(sw: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        if (!Software.isRemote(sw)) throw ApiError("${Software.name(sw)} is not reached through the console service.")
+        checked("POST", "/admin/api/$sw", body)
     }
 
     /** One Fabric Stock company with its people and its computers and phones. */
-    suspend fun fabricDetail(id: Int): FabricDetail =
-        FabricDetail.from(fabric(JSONObject().put("action", "detail").put("id", id)))
+    suspend fun fabricDetail(id: Int): FabricDetail = remoteDetail(Software.FABRIC, id)
+
+    /** 2.1.0 — one company on remote software [sw], with its people and its computers and phones. */
+    suspend fun remoteDetail(sw: String, id: Int): FabricDetail =
+        FabricDetail.from(remoteAction(sw, JSONObject().put("action", "detail").put("id", id)), sw)
+
+    /* ---------- 2.1.0: each software's own demo rules, kept on its own server ---------- */
+
+    /** Every software's demo rules (read when the console is open — never by the background watch). */
+    suspend fun softwareSettings(): SoftwareRulesData = withContext(Dispatchers.IO) {
+        SoftwareRulesData.from(checked("GET", "/admin/api/software-settings", null))
+    }
+
+    /** One software's demo rules changed ({software, trialDays, …}); a refusal is thrown in the service's own words. */
+    suspend fun saveSoftwareSettings(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        checked("POST", "/admin/api/software-settings", body)
+    }
 
     /* ---------- 2.0.0: plans per software, and the payments ledger ---------- */
 

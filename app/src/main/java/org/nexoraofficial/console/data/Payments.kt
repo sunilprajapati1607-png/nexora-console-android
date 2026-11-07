@@ -66,16 +66,24 @@ data class Payment(
         return listOf(customer, reference, note, planName).any { it?.lowercase()?.contains(t) == true }
     }
 
-    /** Whether it is this customer's (by its Sales & Costing or its Fabric Stock licence). */
-    fun of(c: Customer): Boolean =
-        (c.w != null && companyId == c.w.id) || (c.f != null && fabricId == c.f.id)
+    /**
+     * Whether it is this customer's (by its Sales & Costing licence, or its licence on the remote software the
+     * payment is for). 2.1.0 — remoteId (fabricId is its older name) is the id on the payment's own software.
+     */
+    fun of(c: Customer): Boolean {
+        if (c.w != null && companyId == c.w.id) return true
+        val rid = fabricId ?: return false
+        val sw = if (Software.isRemote(software)) software else Software.FABRIC
+        return c.remote(sw)?.id == rid
+    }
 
     companion object {
         fun from(o: JSONObject) = Payment(
             id = o.optInt("id"),
             software = o.str("software") ?: Software.WEIGHT,
             companyId = o.str("companyId")?.trim()?.toIntOrNull(),
-            fabricId = o.str("fabricId")?.trim()?.toIntOrNull(),
+            /* 2.1.0 — the company on the payment's own remote software: remoteId, or its older name fabricId */
+            fabricId = (o.str("remoteId") ?: o.str("fabricId"))?.trim()?.toIntOrNull(),
             customer = o.str("customer") ?: "-",
             plan = o.str("plan"),
             planName = o.str("planName"),

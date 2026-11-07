@@ -184,6 +184,8 @@ data class SoftwarePlans(
 data class PlansData(val software: List<SoftwarePlans> = emptyList()) {
     val weight: SoftwarePlans? get() = block(Software.WEIGHT)
     val fabric: SoftwarePlans? get() = block(Software.FABRIC)
+    val erp: SoftwarePlans? get() = block(Software.ERP)
+    val consult: SoftwarePlans? get() = block(Software.CONSULT)
 
     fun block(id: String): SoftwarePlans? = software.find { it.id == id }
 
@@ -194,7 +196,7 @@ data class PlansData(val software: List<SoftwarePlans> = emptyList()) {
 
     /** Every plan of every software, each with its software's id. */
     val all: List<Pair<String, Plan>>
-        get() = plansOf(Software.WEIGHT).map { Software.WEIGHT to it } + plansOf(Software.FABRIC).map { Software.FABRIC to it }
+        get() = Software.LICENSED.flatMap { sw -> plansOf(sw).map { sw to it } }
 
     companion object {
         fun from(o: JSONObject): PlansData {
@@ -220,7 +222,7 @@ object Plans {
      * in words (Sales & Costing default Pro, Fabric Stock Standard).
      */
     fun nameOf(data: PlansData?, sw: String, code: String?, fallback: String? = null): String {
-        val c = code?.takeIf { it.isNotBlank() } ?: if (sw == Software.FABRIC) "STANDARD" else "PRO"
+        val c = code?.takeIf { it.isNotBlank() } ?: if (Software.isRemote(sw)) "STANDARD" else "PRO"
         return data?.plan(sw, c)?.name ?: fallback?.takeIf { it.isNotBlank() } ?: wordOf(c.uppercase())
     }
 
