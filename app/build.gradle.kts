@@ -13,13 +13,13 @@ android {
         applicationId = "org.nexoraofficial.console"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "2.1.0"
+        versionCode = 25
+        versionName = "2.2.0"
 
         /* The service the console talks to. Changed here, not in code, so a
            staging build is one line. It is also overridable at run time from
            the gate screen, the way the desktop app lets the URL be moved. */
-        buildConfigField("String", "API_BASE", "\"https://nexora-api-55jv.onrender.com\"")
+        buildConfigField("String", "API_BASE", "\"https://nexora-console-api.onrender.com\"")
     }
 
     /* 1.8.0 — the audit before the release: until now every published console

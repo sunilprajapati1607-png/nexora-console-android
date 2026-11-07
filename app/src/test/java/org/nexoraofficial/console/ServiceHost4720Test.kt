@@ -52,9 +52,9 @@ class ServiceHost4720Test {
     fun aReleaseBuildTakesOnlyNexorasOwnService() {
         listOf(
             BuildConfig.API_BASE,
-            "https://nexora-api-55jv.onrender.com/",
-            "https://NEXORA-API-55JV.onrender.com",
-            "  https://nexora-api-55jv.onrender.com  "
+            "https://nexora-console-api.onrender.com/",
+            "https://NEXORA-CONSOLE-API.onrender.com",
+            "  https://nexora-console-api.onrender.com  "
         ).forEach { assertNull(it, ServiceHost.problem(it, anyHost = false)) }
 
         listOf(
@@ -62,14 +62,15 @@ class ServiceHost4720Test {
             "https://nexoraofficial.org",
             "https://www.nexoraofficial.org",
             "https://api.nexoraofficial.org",
-            "http://nexora-api-55jv.onrender.com",            // not https
+            "http://nexora-console-api.onrender.com",            // not https
             "https://evil.example.com",
             "https://another-api.onrender.com",               // Render, but not Nexora's service
-            "https://nexora-api-55jv.onrender.com.evil.com",
+            "https://nexora-api-55jv.onrender.com",           // 2.2.0 — Sales & Costing's service: the console key never goes there
+            "https://nexora-console-api.onrender.com.evil.com",
             "https://nexoraofficial.org.evil.com",
             "https://evilnexoraofficial.org",
-            "https://nexora-api-55jv.onrender.com@evil.com",  // the host is evil.com
-            "https://user:pw@nexora-api-55jv.onrender.com",
+            "https://nexora-console-api.onrender.com@evil.com",  // the host is evil.com
+            "https://user:pw@nexora-console-api.onrender.com",
             "http://127.0.0.1:9",
             "ftp://nexoraofficial.org",
             "not an address",
@@ -98,8 +99,8 @@ class ServiceHost4720Test {
         p.baseUrl = "https://www.nexoraofficial.org"
         assertFalse("the website is not the service", file.contains("baseUrl"))
 
-        p.baseUrl = "https://nexora-api-55jv.onrender.com/"
-        assertEquals("https://nexora-api-55jv.onrender.com", p.baseUrl)
+        p.baseUrl = "https://nexora-console-api.onrender.com/"
+        assertEquals("https://nexora-console-api.onrender.com", p.baseUrl)
     }
 
     private var server: TinyServer? = null

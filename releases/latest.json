@@ -1,9 +1,9 @@
 {
-    "versionCode": 24,
-    "versionName": "2.1.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.1.0-24.apk",
-    "notes": "Every Nexora software in the one console: MSME ERP and Nexora Consult beside Sales & Costing and Fabric Stock, each with its own licence, tab, screen, plans and payments. A customer is joined across all four by the console link or the same GSTIN. New: each software’s own demo rules (demo days, offline days, demo seats, sign-ups, when a licence ends) with Change.",
-    "sha256": "39572fc04cde86547ce551631f6c344ccd5c8d081bf869c37c99d2192eb1c46b",
-    "sizeBytes": 12122490,
-    "publishedAt": "2026-11-07T15:59:41Z"
+    "versionCode": 25,
+    "versionName": "2.2.0",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.2.0-25.apk",
+    "notes": "The console now has its own service (nexora-console-api): every software is reached with its own key, and the phone asks once for the new console key (CONSOLE_ADMIN_KEY). Sales & Costing, Fabric Stock, MSME ERP and Nexora Consult all connected.",
+    "sha256": "b3c1275caa0d371c8ce14058d75bd106638a2dbde92cefcd9a55c0fe94670639",
+    "sizeBytes": 12122226,
+    "publishedAt": "2026-11-07T17:30:56Z"
 }

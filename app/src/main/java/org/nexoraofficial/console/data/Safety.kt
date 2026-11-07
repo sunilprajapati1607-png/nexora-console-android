@@ -19,7 +19,7 @@ import java.net.URI
  * first request — so anybody who talked the owner into typing another
  * address would have collected it. A release build now talks only to
  * Nexora's own service: the address it was built with
- * (BuildConfig.API_BASE, nexora-api-55jv.onrender.com) — https only, no user
+ * (BuildConfig.API_BASE, nexora-console-api.onrender.com) — https only, no user
  * name in the address.
  *
  * 4.72.0, after review — that one host and nothing else. nexoraofficial.org
@@ -36,7 +36,7 @@ object ServiceHost {
 
     /** The one host the build was made for. */
     val defaultHost: String = runCatching { URI(BuildConfig.API_BASE).host.lowercase() }
-        .getOrDefault("nexora-api-55jv.onrender.com")
+        .getOrDefault("nexora-console-api.onrender.com")
 
     private val LOOPBACK = setOf("127.0.0.1", "localhost", "10.0.2.2", "[::1]", "::1")
 

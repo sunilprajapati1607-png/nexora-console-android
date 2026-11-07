@@ -62,7 +62,7 @@ fun GateScreen(vm: ConsoleViewModel) {
             Spacer(Modifier.height(14.dp))
 
             ConsoleCard {
-                Help("Enter the admin key (NEXORA_ADMIN_KEY on the service).")
+                Help("Enter the console key (CONSOLE_ADMIN_KEY on nexora-console-api).")
 
                 vm.gateError?.let {
                     Spacer(Modifier.height(10.dp))
