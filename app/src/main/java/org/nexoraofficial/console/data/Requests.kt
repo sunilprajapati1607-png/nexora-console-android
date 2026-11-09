@@ -66,15 +66,20 @@ data class PlanForm(
     val extraUserPrice: String = "",
     val features: Map<String, Boolean> = emptyMap(),
     /** New plan: whose ticks it started from (sent as copyFrom). */
-    val copyFrom: String = ""
+    val copyFrom: String = "",
+    /** 2.3.0 — validity: the days one paid period runs (365 = a year). */
+    val days: String = "365"
 ) {
+    /** 2.3.0 — the days as a number when they are 1–3660, else null (refused before anything is sent). */
+    val daysValue: Int? get() = days.trim().toIntOrNull()?.takeIf { it in 1..3660 }
+
     companion object {
         private fun num(d: Double?): String = d?.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() }.orEmpty()
 
         fun of(p: Plan) = PlanForm(
             name = p.name, note = p.note.orEmpty(), priceFirst = num(p.priceFirst), priceRenewal = num(p.priceRenewal),
             usersIncluded = p.usersIncluded?.toString().orEmpty(), extraUserPrice = num(p.extraUserPrice),
-            features = p.features
+            features = p.features, days = p.periodDays.toString()
         )
 
         /** Duplicate: the same, named "… copy", made from its ticks. */
@@ -226,6 +231,8 @@ object Requests {
             .put("usersIncluded", f.usersIncluded.trim())
             .put("extraUserPrice", f.extraUserPrice.trim())
             .put("features", features)
+        /* 2.3.0 — the validity of one period, as a number (the service keeps 1–3660) */
+        f.daysValue?.let { b.put("days", it) }
         if (existing != null) b.put("code", existing.code)
         else if (f.copyFrom.isNotBlank()) b.put("copyFrom", f.copyFrom)
         return b

@@ -215,9 +215,26 @@ data class PaymentForm(
     val extendDays: Int = 365,
     val validFrom: String = "",
     val validTo: String = "",
-    val note: String = ""
+    val note: String = "",
+    /* 2.3.0 — Record payment BY PLAN (the desktop console 1.4's): the plan, the users and the periods it pays
+       for; the service works the amount out (quote) and on Save sets the plan and the seats and adds
+       plan days × periods. false = "Without plan", the older add with extendDays. */
+    val byPlan: Boolean = false,
+    val plan: String = "",
+    val users: Int = 1,
+    val periods: Int = 1,
+    /** The amount was typed over the quote's (it is then sent and overrides it). */
+    val typed: Boolean = false
 ) {
     companion object {
+        /** 2.3.0 — what a payment by plan is for (the desktop console's words). */
+        val PLAN_KINDS = listOf(
+            "NEW" to "New customer — first period",
+            "RENEWAL" to "Renewal",
+            "EXTRA_USERS" to "Extra users — on the period already paid",
+            "UPGRADE" to "Plan upgrade"
+        )
+
         /** The renewals offered, in the order the web console offers them. */
         val RENEWALS = listOf(0, 365, 730, 180, 30)
 

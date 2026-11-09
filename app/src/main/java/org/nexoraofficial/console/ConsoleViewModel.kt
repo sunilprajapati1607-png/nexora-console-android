@@ -69,6 +69,14 @@ import org.nexoraofficial.console.data.ValQuick
 import org.nexoraofficial.console.data.Validity
 import org.nexoraofficial.console.data.ValidityRow
 import org.nexoraofficial.console.data.WeightEdit
+import org.nexoraofficial.console.data.Billing
+import org.nexoraofficial.console.data.InvFilter
+import org.nexoraofficial.console.data.Invoice
+import org.nexoraofficial.console.data.InvoiceDraft
+import org.nexoraofficial.console.data.InvoiceSettings
+import org.nexoraofficial.console.data.InvoiceSettingsData
+import org.nexoraofficial.console.data.PayQuote
+import org.nexoraofficial.console.data.Refused
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import java.time.LocalDate
@@ -597,6 +605,15 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         payments = null
         paymentsLoad = Load.IDLE
         paymentsError = null
+        /* 2.3.0 — the invoices and Invoice Settings go with the key */
+        invoicesJob?.cancel()
+        invoices = null
+        invoicesLoad = Load.IDLE
+        invSettings = null
+        invSettingsLoad = Load.IDLE
+        invSettingsForm = null
+        quote = null
+        quoteFor = null
         customerQuick = CustQuick.ALL
         newCustomer = NewCustomerForm()
     }
@@ -1491,6 +1508,11 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             say("Give the plan a name.", Msg.Kind.ERR)
             return
         }
+        /* 2.3.0 — the validity of one period, as the desktop console refuses it */
+        if (form.daysValue == null) {
+            say("Validity is the days in one period — 1 to 3660 (365 for a year).", Msg.Kind.ERR)
+            return
+        }
         viewModelScope.launch {
             busy = true
             try {
@@ -1552,7 +1574,55 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
             c.w != null -> Software.WEIGHT
             else -> c.softwares.firstOrNull() ?: Software.FABRIC
         }
-        return PaymentForm(customerKey = c?.key.orEmpty(), software = sw, paidOn = today().toString())
+        /* 2.3.0 — by plan unless told otherwise: the customer's own plan, its seats, one period */
+        return presetPlan(PaymentForm(customerKey = c?.key.orEmpty(), software = sw, paidOn = today().toString(), byPlan = true))
+    }
+
+    /**
+     * 2.3.0 — the plan part of the form for its customer and software (the desktop's preset()): the plan it is on
+     * now, its seats, one period, and New for a demo else Renewal. The amount is left to the quote.
+     */
+    fun presetPlan(f: PaymentForm): PaymentForm {
+        val x = customer(f.customerKey) ?: return f
+        val sw = f.software
+        val code = Customers.planCode(x, sw)?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
+            ?: plans?.plansOf(sw)?.firstOrNull { it.active }?.code ?: if (Software.isRemote(sw)) "STANDARD" else "PRO"
+        val seats = (if (sw == Software.WEIGHT) x.w?.seats else x.remote(sw)?.seats)?.takeIf { it > 0 } ?: 1
+        return f.copy(plan = code, users = seats, periods = 1, kind = if (x.sub(sw)?.state == "DEMO") "NEW" else "RENEWAL",
+            typed = false, amount = if (f.byPlan) "" else f.amount)
+    }
+
+    /* 2.3.0 — the service's sum for the plan, users and periods on the form (POST payments {action:'quote'}) */
+    var quote by mutableStateOf<PayQuote?>(null)
+        internal set
+    /** Which form the quote (or its error) is for — Billing.quoteKey. */
+    var quoteFor by mutableStateOf<String?>(null)
+        internal set
+    var quoteError by mutableStateOf<String?>(null)
+        internal set
+    private var quoteJob: Job? = null
+
+    /** Ask the service what [f] comes to — once per plan, kind, users and periods; changes nothing there. */
+    fun requote(f: PaymentForm) {
+        if (!f.byPlan || f.plan.isBlank()) return
+        val x = customer(f.customerKey) ?: return
+        if (!x.has(f.software)) return
+        val k = Billing.quoteKey(f)
+        if (k == quoteFor && (quote != null || quoteError != null)) return
+        quoteJob?.cancel()
+        quoteFor = k; quote = null; quoteError = null
+        quoteJob = viewModelScope.launch {
+            try {
+                val q = PayQuote.from(api.paymentAction(Billing.quote(f, x)))
+                if (quoteFor != k) return@launch
+                quote = q
+                /* the amount follows the quote until the owner types over it */
+                if (!payForm.typed && Billing.quoteKey(payForm) == k) payForm = payForm.copy(amount = PayQuote.typed(q.amount))
+            } catch (e: Exception) {
+                if (e is CancellationException || quoteFor != k) return@launch
+                quoteError = (e as? ApiError)?.message ?: "The amount could not be worked out."
+            }
+        }
     }
 
     /** Record payment; with a renewal chosen the licence is renewed in the same step. [done] gets the payment. */
@@ -1561,12 +1631,18 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
         when {
             c == null -> return say("Choose the customer.", Msg.Kind.ERR)
             !c.has(form.software) -> return say("This customer has no ${Software.name(form.software)} licence.", Msg.Kind.ERR)
-            (Money.parse(form.amount) ?: 0.0) <= 0.0 -> return say("Enter the amount received.", Msg.Kind.ERR)
+            !form.byPlan && (Money.parse(form.amount) ?: 0.0) <= 0.0 -> return say("Enter the amount received.", Msg.Kind.ERR)
+        }
+        /* 2.3.0 — by plan: the service sets the plan and the seats and adds plan days × periods */
+        val body = try {
+            if (form.byPlan) Billing.addByPlan(form, c!!, quote?.takeIf { quoteFor == Billing.quoteKey(form) }) else Requests.paymentAdd(form, c!!)
+        } catch (e: Refused) {
+            return say(e.message ?: "Check the form.", Msg.Kind.ERR)
         }
         viewModelScope.launch {
             busy = true
             try {
-                val r = api.paymentAction(Requests.paymentAdd(form, c!!))
+                val r = api.paymentAction(body)
                 val p = r.optJSONObject("payment")?.let { Payment.from(it) }
                 val warn = r.optString("warning")
                 say(
@@ -1577,7 +1653,7 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                     if (warn.isNotEmpty()) Msg.Kind.WARN else Msg.Kind.OK, holdMs = if (warn.isNotEmpty()) 15_000 else 6_000
                 )
                 loadPayments()
-                if (form.extendDays > 0) load()
+                if (form.byPlan || form.extendDays > 0) load()
                 done(p)
             } catch (e: Exception) {
                 say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
@@ -1614,6 +1690,184 @@ class ConsoleViewModel(app: Application) : AndroidViewModel(app) {
                 api.paymentAction(Requests.paymentDelete(p.id))
                 say("Deleted the payment of ${Money.rupees(p.amount)} from ${p.customer}.", Msg.Kind.OK)
                 loadPayments()
+                done(true)
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(false)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /* ---------- 2.3.0: invoices with and without GST ---------- */
+
+    /* internal (not private) so the tests can draw the screens from made-up invoices, as `payments` */
+    var invoices by mutableStateOf<List<Invoice>?>(null)
+        internal set
+    var invoicesLoad by mutableStateOf(Load.IDLE)
+        internal set
+    var invoicesError by mutableStateOf<String?>(null)
+        internal set
+    var invSettings by mutableStateOf<InvoiceSettingsData?>(null)
+        internal set
+    var invSettingsLoad by mutableStateOf(Load.IDLE)
+        internal set
+    var invSettingsError by mutableStateOf<String?>(null)
+        internal set
+    /** Invoice Settings while they are typed (null until the screen opens on what the service has). */
+    var invSettingsForm by mutableStateOf<InvoiceSettings?>(null)
+    /** The Make invoice form while it is open. */
+    var invDraft by mutableStateOf(InvoiceDraft())
+    /* the Invoices list's filters */
+    var invSoft by mutableStateOf<String?>(null)
+    var invDoc by mutableStateOf("all")
+    var invStatus by mutableStateOf("all")
+    var invMonth by mutableStateOf<String?>(null)
+    var invQuery by mutableStateOf("")
+    val invoicesShown: List<Invoice> get() = InvFilter.apply(invoices.orEmpty(), invSoft, invDoc, invStatus, invMonth, invQuery)
+    private var invoicesJob: Job? = null
+
+    fun invoiceById(id: String): Invoice? = invoices?.find { it.id == id }
+
+    /** A payment's invoices, the issued ones first. */
+    fun invoicesFor(paymentId: Int): List<Invoice> = invoices.orEmpty().filter { it.paymentId == paymentId }.sortedBy { it.cancelled }
+
+    /** Every invoice, newest first. Quiet, like the payments: what went wrong is said on the Invoices screen. */
+    fun loadInvoices() {
+        if (key.isBlank()) return
+        invoicesJob?.cancel()
+        invoicesLoad = Load.LOADING
+        invoicesJob = viewModelScope.launch {
+            try {
+                invoices = api.invoices()
+                invoicesError = null
+                invoicesLoad = Load.READY
+            } catch (e: Exception) {
+                if (e is CancellationException) return@launch
+                invoicesError = (e as? ApiError)?.let {
+                    if (it.status == 404) "This service makes no invoices yet — it needs the service update." else it.message
+                } ?: "The invoices could not be read."
+                invoicesLoad = Load.FAILED
+            }
+        }
+    }
+
+    /** Invoice Settings; [then] is told whether an invoice can be made with them (null when they could not be read). */
+    fun loadInvoiceSettings(then: ((Boolean?) -> Unit)? = null) {
+        if (key.isBlank()) return
+        invSettingsLoad = Load.LOADING
+        viewModelScope.launch {
+            try {
+                val s = api.invoiceSettings()
+                invSettings = s
+                invSettingsError = null
+                invSettingsLoad = Load.READY
+                then?.invoke(s.ready)
+            } catch (e: Exception) {
+                if (e is CancellationException) return@launch
+                invSettingsError = (e as? ApiError)?.message ?: "Invoice Settings could not be read."
+                invSettingsLoad = Load.FAILED
+                then?.invoke(null)
+            }
+        }
+    }
+
+    /** Whether an invoice can be made — from the settings in hand, else read first. A failure is said in red. */
+    fun whenInvoiceReady(then: (Boolean) -> Unit) {
+        val s = invSettings
+        if (s != null) return then(s.ready)
+        loadInvoiceSettings { ok ->
+            if (ok == null) say("Invoice Settings: " + (invSettingsError ?: "could not be read."), Msg.Kind.ERR) else then(ok)
+        }
+    }
+
+    /** Save Invoice Settings (checked here first, in the desktop console's words). [done] is told whether they were kept. */
+    fun saveInvoiceSettings(s: InvoiceSettings, done: (Boolean) -> Unit = {}) {
+        val body = try { Billing.settingsBody(s) } catch (e: Refused) { say(e.message ?: "Check the settings.", Msg.Kind.ERR); return done(false) }
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.saveInvoiceSettings(body)
+                val kept = r.optJSONObject("settings")?.let { InvoiceSettings.from(it) } ?: Billing.cleanSettings(s)
+                invSettings = InvoiceSettingsData(kept, if (r.has("ready")) r.optBoolean("ready") else true)
+                invSettingsLoad = Load.READY
+                invSettingsForm = null
+                say("Invoice Settings saved — new invoices carry them.", Msg.Kind.OK)
+                done(true)
+            } catch (e: Exception) {
+                say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)
+                done(false)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** The Make invoice form for a payment: Tax Invoice with GST, the amount including GST, dated the day it was paid. */
+    fun draftForPayment(p: Payment): InvoiceDraft {
+        val x = customers.find { p.of(it) }
+        val party = x?.let { Billing.partyOf(it, p.software, invoices.orEmpty(), invSettings?.settings) }
+            ?: org.nexoraofficial.console.data.InvParty(name = p.customer, stateCode = invSettings?.settings?.stateCode.orEmpty())
+        val remote = Software.isRemote(p.software)
+        return InvoiceDraft(
+            mode = "pay", paymentId = p.id, software = p.software,
+            companyId = if (remote) null else p.companyId, remoteId = if (remote) p.fabricId else null,
+            kind = "INVOICE", gst = true, inclusive = true, date = p.paidOn ?: today().toString(), customer = party, customerKey = x?.key
+        )
+    }
+
+    /** The Make invoice form for a service with no payment: lines from the customer's plan, amounts before GST. */
+    fun draftForService(x: Customer, sw: String): InvoiceDraft {
+        val plan = plans?.plan(sw, Customers.planCode(x, sw) ?: if (Software.isRemote(sw)) "STANDARD" else "PRO")
+        val sac = invSettings?.settings?.sac?.takeIf { it.isNotBlank() } ?: "997331"
+        return InvoiceDraft(
+            mode = "svc", software = sw,
+            companyId = if (sw == Software.WEIGHT) x.w?.id else null, remoteId = if (sw == Software.WEIGHT) null else x.remote(sw)?.id,
+            kind = "INVOICE", gst = true, inclusive = false, date = today().toString(),
+            customer = Billing.partyOf(x, sw, invoices.orEmpty(), invSettings?.settings), lines = Billing.planLines(x, sw, plan, sac),
+            customerKey = x.key
+        )
+    }
+
+    private fun putInvoice(inv: Invoice) {
+        val list = invoices.orEmpty()
+        invoices = if (list.any { it.id == inv.id }) list.map { if (it.id == inv.id) inv else it } else listOf(inv) + list
+    }
+
+    /** Make the invoice; the service numbers it and works every figure out. [done] gets it as the service made it. */
+    fun createInvoice(d: InvoiceDraft, done: (Invoice?) -> Unit = {}) {
+        val body = try { Billing.createBody(d) } catch (e: Refused) { say(e.message ?: "Check the form.", Msg.Kind.ERR); return done(null) }
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.invoiceAction(body)
+                val inv = r.optJSONObject("invoice")?.let { Invoice.from(it) }
+                    ?: throw ApiError("The service made it but sent no invoice back — open Invoices.")
+                putInvoice(inv)
+                say("Made ${inv.kindWord} ${inv.number} — ₹ ${org.nexoraofficial.console.data.InvFmt.f2(inv.total)}.", Msg.Kind.OK)
+                done(inv)
+            } catch (e: Exception) {
+                val a = e as? ApiError
+                /* 409 NOT_SET_UP / NO_GSTIN: Invoice Settings are missing what this invoice needs */
+                if (a != null && a.status == 409 && a.code == "NOT_SET_UP") invSettings = invSettings?.copy(ready = false)
+                say(a?.message ?: "Something went wrong.", if (a?.status == 409) Msg.Kind.WARN else Msg.Kind.ERR, holdMs = 10_000)
+                done(null)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** Cancel — never edit or delete: the number stays used and the sheet prints CANCELLED. A reason is required. */
+    fun cancelInvoice(inv: Invoice, reason: String, done: (Boolean) -> Unit = {}) {
+        val body = try { Billing.cancelBody(inv, reason) } catch (e: Refused) { say(e.message ?: "Write the reason.", Msg.Kind.ERR); return done(false) }
+        viewModelScope.launch {
+            busy = true
+            try {
+                val r = api.invoiceAction(body)
+                putInvoice(r.optJSONObject("invoice")?.let { Invoice.from(it) } ?: inv.copy(cancelledAt = java.time.Instant.now().toString(), cancelReason = reason.trim()))
+                say("${inv.number} cancelled — its number stays used.", Msg.Kind.OK)
                 done(true)
             } catch (e: Exception) {
                 say((e as? ApiError)?.message ?: "Something went wrong.", Msg.Kind.ERR)

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -182,6 +183,8 @@ fun PaymentWindow(vm: ConsoleViewModel, nav: Navigator, id: Int, gutter: Padding
     BackHandler(enabled = editing) { nav.requestBack() }
 
     val owner = vm.customers.find { p.of(it) }
+    LaunchedEffect(Unit) { if (vm.invoicesLoad == Load.IDLE) vm.loadInvoices() }
+    val made = vm.invoicesFor(p.id)
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = gutter,
@@ -208,6 +211,8 @@ fun PaymentWindow(vm: ConsoleViewModel, nav: Navigator, id: Int, gutter: Padding
                 tools += Tool("Customer", Icons.Outlined.Person, ToolColours.teal, owner != null) {
                     owner?.let { nav.open(Screen.CustomerWin(it.key, p.software, "payments")) }
                 }
+                /* 2.3.0 — its invoice or receipt: made here, or opened when it has one */
+                tools += Tool("Invoice", Icons.AutoMirrored.Outlined.ReceiptLong, ToolColours.violet, !editing) { startPaymentInvoice(vm, nav, onAsk, p) }
                 tools += Tool("Delete", Icons.Outlined.Delete, ToolColours.red) {
                     onAsk(
                         Ask.Confirm(
@@ -248,23 +253,36 @@ fun PaymentWindow(vm: ConsoleViewModel, nav: Navigator, id: Int, gutter: Padding
                 }
             }
         }
+        /* 2.3.0 — the invoices and receipts made for it */
+        if (!editing && made.isNotEmpty()) {
+            item(key = "inv-head") { Box(page) { ListHeading(counted(made.size, "invoice") + " for this payment", "tap one to open it") } }
+            made.forEach { inv -> item(key = "inv-${inv.id}") { Box(page) { InvoiceRow(inv) { nav.open(Screen.InvoiceWin(inv.id)) } } } }
+        }
     }
 }
 
 /** The fields a payment is typed in: what it was for, how much, when, how, a reference, the validity, a note. */
+/* 2.3.0 — internal, for Record payment's own file; [byPlan] leaves out What for and the validity (the plan part asks
+   them) and the amount says it was worked out — typing over it marks the form typed (then it is sent and overrides). */
 @Composable
-private fun PaymentFields(f: PaymentForm, onChange: (PaymentForm) -> Unit, onAsk: (Ask) -> Unit, renewing: Boolean) {
-    ChoiceField("For", PaymentKinds.ALL.map { it to PaymentKinds.word(it) }, f.kind) { onChange(f.copy(kind = it)) }
-    Spacer(Modifier.height(10.dp))
-    ConsoleField("Amount received (₹)", f.amount, { v -> onChange(f.copy(amount = v.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' })) },
-        placeholder = "15,000", numeric = true)
+internal fun PaymentFields(f: PaymentForm, onChange: (PaymentForm) -> Unit, onAsk: (Ask) -> Unit, renewing: Boolean, byPlan: Boolean = false) {
+    if (!byPlan) {
+        ChoiceField("For", PaymentKinds.ALL.map { it to PaymentKinds.word(it) }, f.kind) { onChange(f.copy(kind = it)) }
+        Spacer(Modifier.height(10.dp))
+    }
+    ConsoleField(
+        "Amount received (₹)", f.amount,
+        { v -> val a = v.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' }; onChange(f.copy(amount = a, typed = byPlan && a.isNotBlank())) },
+        placeholder = "15,000", numeric = true,
+        supporting = if (byPlan) "worked out from the plan; type over it if it differs" else null
+    )
     Spacer(Modifier.height(8.dp))
     DateField("Paid on", f.paidOn, Modifier.fillMaxWidth(), onAsk = onAsk) { d -> onChange(f.copy(paidOn = d)) }
     Spacer(Modifier.height(10.dp))
     ChoiceField("How it came", PaymentModes.ALL.map { it to PaymentModes.word(it) }, f.mode) { onChange(f.copy(mode = it)) }
     Spacer(Modifier.height(8.dp))
     ConsoleField("Reference (UTR, cheque, invoice)", f.reference, { onChange(f.copy(reference = it)) })
-    if (!renewing) {
+    if (!renewing && !byPlan) {
         Spacer(Modifier.height(10.dp))
         FieldPair(
             { DateField(if (f.id == 0) "Valid from (if not renewing)" else "Valid from", f.validFrom, it, clearable = true, onAsk = onAsk) { d -> onChange(f.copy(validFrom = d)) } },
@@ -272,118 +290,7 @@ private fun PaymentFields(f: PaymentForm, onChange: (PaymentForm) -> Unit, onAsk
         )
     }
     Spacer(Modifier.height(8.dp))
-    ConsoleField("Note", f.note, { onChange(f.copy(note = it)) }, singleLine = false)
+    ConsoleField("Note", f.note, { onChange(f.copy(note = it)) }, singleLine = false,
+        placeholder = if (byPlan) "left empty: the plan, users and periods" else "")
 }
 
-/* ------------------------------------------------------- Record payment */
-
-@Composable
-fun RecordPaymentScreen(vm: ConsoleViewModel, nav: Navigator, gutter: PaddingValues, page: Modifier, onAsk: (Ask) -> Unit) {
-    val c = LocalNexora.current
-    val f = vm.payForm
-    val all = vm.customers
-    val x = vm.customer(f.customerKey)
-    val sws = x?.softwares.orEmpty()
-    val save = { vm.recordPayment(vm.payForm) { p -> if (p != null) nav.back() } }
-
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = gutter,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(key = "head") {
-            Box(page) {
-                WindowHead("₹", PayColours, "Record Payment",
-                    "What came in, for which software and plan — and, if you like, the renewal it pays for", "NEW")
-            }
-        }
-        item(key = "tools") {
-            Box(page) {
-                ToolStrip(
-                    listOf(
-                        Tool("Save", Icons.Outlined.Save, ToolColours.green, !vm.busy && x != null) { save() },
-                        Tool("Cancel", Icons.Outlined.Close, ToolColours.back) { nav.back() }
-                    )
-                )
-            }
-        }
-        item(key = "form") {
-            Box(page) {
-                ConsoleCard(padding = 14) {
-                    /* the customer: a tap opens the list to choose from */
-                    Text("Customer", color = c.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 2.dp, bottom = 3.dp))
-                    Row(
-                        Modifier.fillMaxWidth().background(c.surface, MaterialTheme.shapes.small)
-                            .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
-                            .pressable {
-                                onAsk(
-                                    Ask.Pick(
-                                        title = "Which customer paid?",
-                                        body = "Each software has its own licence; the payment is recorded against the one you choose next.",
-                                        options = all.mapIndexed { i, cu ->
-                                            Ask.Pick.Option(i, cu.name, (listOfNotNull(cu.gstin) + cu.softwares.map { Software.name(it) }).joinToString(" · "))
-                                        },
-                                        confirmText = "Choose",
-                                        empty = "No customers yet.",
-                                        onPick = { i ->
-                                            all.getOrNull(i)?.let { cu ->
-                                                val sw = if (cu.has(vm.payForm.software)) vm.payForm.software else cu.softwares.firstOrNull() ?: Software.WEIGHT
-                                                vm.payForm = vm.payForm.copy(customerKey = cu.key, software = sw)
-                                            }
-                                        }
-                                    )
-                                )
-                            }
-                            .padding(horizontal = 14.dp, vertical = 14.dp)
-                    ) {
-                        Text(x?.name ?: "Choose the customer", color = if (x == null) c.faint else c.text, fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text("Change", color = c.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    if (sws.isNotEmpty()) {
-                        ChoiceField("Software", sws.map { it to Software.name(it) }, f.software) { vm.payForm = f.copy(software = it) }
-                        Spacer(Modifier.height(8.dp))
-                    }
-                    val lic = x?.sub(f.software)
-                    val planCode = x?.let { Customers.planCode(it, f.software) }
-                    ReadField(
-                        "Plan",
-                        if (x == null || lic == null) "—"
-                        else vm.planName(f.software, planCode, Customers.planFallback(x, f.software)) + " · " +
-                            Customers.stateWord(lic.state) + " · ends " + Fmt.day(lic.at)
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    val demo = lic?.state == "DEMO"
-                    ChoiceField(
-                        "Renew the licence with it",
-                        PaymentForm.RENEWALS.map { it.toString() to PaymentForm.renewalText(it, demo) },
-                        f.extendDays.toString()
-                    ) { vm.payForm = f.copy(extendDays = it.toInt()) }
-                    Spacer(Modifier.height(10.dp))
-                    PaymentFields(f, { vm.payForm = it }, onAsk, renewing = f.extendDays > 0)
-                }
-            }
-        }
-        item(key = "help") {
-            Box(page) {
-                Help(
-                    "With a renewal chosen, the licence is renewed in the same step and the payment keeps the validity it bought: " +
-                        "Sales & Costing adds the time after what is left; Fabric Stock carries the days left into the new period. " +
-                        "Without one, give the validity by hand if you know it.",
-                    Modifier.padding(horizontal = 4.dp)
-                )
-            }
-        }
-        item(key = "buttons") {
-            Box(page) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ConsoleButton("Record the payment", save, kind = ButtonKind.Primary, enabled = !vm.busy && x != null,
-                        modifier = Modifier.weight(1f), center = true)
-                    ConsoleButton("Cancel", { nav.back() }, modifier = Modifier.weight(1f), center = true)
-                }
-            }
-        }
-    }
-}

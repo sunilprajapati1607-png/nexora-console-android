@@ -10,6 +10,7 @@ import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QuestionAnswer
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Scale
 import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.runtime.getValue
@@ -99,6 +100,12 @@ sealed interface Screen {
         override val icon = Icons.Outlined.MoreHoriz
     }
 
+    /** 2.3.0 — every invoice and receipt the console service has made (side menu). */
+    data object Invoices : Root {
+        override val title = "Invoices"
+        override val icon = Icons.AutoMirrored.Outlined.ReceiptLong
+    }
+
     /* ---- what opens on top of them ---- */
 
     /**
@@ -113,6 +120,15 @@ sealed interface Screen {
 
     /** 2.0.0 — Record payment (the form is the view model's payForm). */
     data object RecordPayment : Screen
+
+    /** 2.3.0 — Invoice Settings: your company as printed on every invoice. */
+    data object InvoiceSettings : Screen
+
+    /** 2.3.0 — Make invoice (the form is the view model's invDraft). */
+    data object MakeInvoice : Screen
+
+    /** 2.3.0 — one invoice: every figure the service worked out, Share PDF, Save PDF, Cancel invoice. */
+    data class InvoiceWin(val id: String) : Screen
 
     /** 2.0.0 — one plan of one software; [code] null = a new plan, made from [copyFrom]'s ticks when given (Duplicate). */
     data class PlanWin(val sw: String, val code: String?, val copyFrom: String? = null) : Screen

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Check
@@ -401,6 +402,8 @@ private fun customerTools(
             vm.payForm = vm.newPaymentForm(x.key, sw)
             nav.open(Screen.RecordPayment)
         }
+        /* 2.3.0 — an invoice for a service with no payment: lines from the plan */
+        t += Tool("Make invoice", Icons.AutoMirrored.Outlined.ReceiptLong, ToolColours.violet, !editing) { startServiceInvoice(vm, nav, onAsk, x, sw) }
     }
     return t
 }

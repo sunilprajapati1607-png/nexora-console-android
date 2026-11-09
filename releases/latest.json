@@ -1,9 +1,9 @@
 {
-    "versionCode": 25,
-    "versionName": "2.2.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.2.0-25.apk",
-    "notes": "The console now has its own service (nexora-console-api): every software is reached with its own key, and the phone asks once for the new console key (CONSOLE_ADMIN_KEY). Sales & Costing, Fabric Stock, MSME ERP and Nexora Consult all connected.",
-    "sha256": "b3c1275caa0d371c8ce14058d75bd106638a2dbde92cefcd9a55c0fe94670639",
-    "sizeBytes": 12122226,
-    "publishedAt": "2026-11-07T17:30:56Z"
+    "versionCode": 26,
+    "versionName": "2.3.0",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.3.0-26.apk",
+    "notes": "Payment by plan: choose plan, users and periods — the amount (users included, extra users × price) is worked out and the plan’s days are added by themselves. Plans have validity days. Invoices with GST and without, receipts, Invoice Settings, Share / Save PDF, cancel, and an Invoices list.",
+    "sha256": "9f5a04130005d04d5a6ede6aa97c9aaf41f9f4e21779d781cae6471666415551",
+    "sizeBytes": 12250362,
+    "publishedAt": "2026-11-09T16:10:53Z"
 }

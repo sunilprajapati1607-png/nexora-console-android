@@ -241,6 +241,31 @@ class Api(
         checked("POST", "/admin/api/payments", body)
     }
 
+    /* ---- 2.3.0: invoices (the console service numbers them and does every sum) ---- */
+
+    /** Your company as printed on every invoice, and whether an invoice can be made with it. */
+    suspend fun invoiceSettings(): InvoiceSettingsData = withContext(Dispatchers.IO) {
+        InvoiceSettingsData.from(checked("GET", "/admin/api/invoice-settings", null))
+    }
+
+    /** Save Invoice Settings; a wrong GSTIN, IFSC, PAN, rate or prefix comes back 400 in the service's words. */
+    suspend fun saveInvoiceSettings(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        checked("POST", "/admin/api/invoice-settings", body)
+    }
+
+    /** The invoices, narrowed by [query] (paymentId, software, companyId, remoteId, from, to, gst=yes|no). */
+    suspend fun invoices(query: Map<String, String> = emptyMap()): List<Invoice> = withContext(Dispatchers.IO) {
+        val q = query.filterValues { it.isNotBlank() }.entries.joinToString("&") { (k, v) ->
+            URLEncoder.encode(k, "UTF-8") + "=" + URLEncoder.encode(v, "UTF-8")
+        }
+        Invoice.listFrom(checked("GET", "/admin/api/invoices" + (if (q.isEmpty()) "" else "?$q"), null))
+    }
+
+    /** create | cancel an invoice; 409 NOT_SET_UP / NO_GSTIN when Invoice Settings are missing. */
+    suspend fun invoiceAction(body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        checked("POST", "/admin/api/invoices", body)
+    }
+
     /* 200 is done; any other answer is a failure carrying {error, message} — 502 FABRIC_DOWN or
        FABRIC_KEY when Fabric Stock is asleep or refuses the key — told in the message's words.
        Read for longer than the rest, for Fabric Stock waking. */

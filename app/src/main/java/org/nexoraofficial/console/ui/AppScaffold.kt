@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Menu
@@ -227,6 +228,11 @@ fun AppScaffold(vm: ConsoleViewModel) {
                     is Screen.CustomerWin -> CustomerWindow(vm, nav, screen, gutter, page) { ask = it }
                     is Screen.PaymentWin -> PaymentWindow(vm, nav, screen.id, gutter, page) { ask = it }
                     Screen.RecordPayment -> RecordPaymentScreen(vm, nav, gutter, page) { ask = it }
+                    /* 2.3.0 — invoices with and without GST */
+                    Screen.Invoices -> InvoicesScreen(vm, nav, gutter, page)
+                    Screen.InvoiceSettings -> InvoiceSettingsScreen(vm, gutter, page) { ask = it }
+                    Screen.MakeInvoice -> MakeInvoiceScreen(vm, nav, gutter, page) { ask = it }
+                    is Screen.InvoiceWin -> InvoiceWindow(vm, nav, screen.id, gutter, page) { ask = it }
                     is Screen.PlanWin -> PlanWindow(vm, nav, screen, gutter, page) { ask = it }
                     is Screen.FeedbackDetail -> FeedbackDetailScreen(vm, nav, screen.id, gutter, page) { ask = it }
                     is Screen.EnquiryForm -> EnquiryFormScreen(vm, nav, screen.id, gutter, page, wide)
@@ -346,6 +352,9 @@ private fun titleOf(screen: Screen, vm: ConsoleViewModel): String = when (screen
     is Screen.CustomerWin -> vm.customer(screen.key)?.name ?: "Customer"
     is Screen.PaymentWin -> "Payment"
     Screen.RecordPayment -> "Record Payment"
+    Screen.InvoiceSettings -> "Invoice Settings"
+    Screen.MakeInvoice -> if (vm.invDraft.fromPayment) "Make Invoice" else "Service Invoice"
+    is Screen.InvoiceWin -> vm.invoiceById(screen.id)?.number ?: "Invoice"
     is Screen.PlanWin -> if (screen.code == null) "New Plan" else (vm.plans?.plan(screen.sw, screen.code)?.name ?: "Plan")
     is Screen.EnquiryForm -> if (screen.id == null) "New Enquiry" else "Edit Enquiry"
     is Screen.FeedbackDetail -> vm.feedbackById(screen.id)?.let { if (it.isBug) "Problem Report" else "Feedback" } ?: "Report"
@@ -374,6 +383,8 @@ private fun subtitleOf(screen: Screen, vm: ConsoleViewModel): String? = when (sc
     }
     is Screen.PaymentWin -> vm.paymentById(screen.id)?.let { it.customer + " · " + it.softwareName }
     is Screen.PlanWin -> Software.name(screen.sw)
+    Screen.Invoices -> vm.invoices.orEmpty().let { l -> "${l.size} documents · ${l.count { it.cancelled }} cancelled" }
+    is Screen.InvoiceWin -> vm.invoiceById(screen.id)?.let { it.title + " · " + it.customer.name }
     else -> null
 }
 
@@ -461,6 +472,11 @@ private fun ConsoleDrawer(vm: ConsoleViewModel, nav: Navigator, onExport: () -> 
                 DrawerRow(d.icon, d.title, SwColours.of(sw)[0], at(d), note = note) { go { nav.switchTo(d) } }
             }
             DrawerRow(Icons.Outlined.Build, Software.JOBWORK_NAME, SwColours.JOBWORK[0], note = "soon", enabled = false) {}
+            /* 2.3.0 — invoices, and your company as printed on them */
+            DrawerRow(Screen.Invoices.icon, "Invoices", Color(0xFF2563EB), at(Screen.Invoices), note = vm.invoices?.size?.toString()) {
+                go { nav.switchTo(Screen.Invoices) }
+            }
+            DrawerRow(Icons.Outlined.EditNote, "Invoice settings", Color(0xFF7C3AED)) { go { nav.switchTo(Screen.Invoices); nav.open(Screen.InvoiceSettings) } }
             DrawerRow(Screen.Plans.icon, "Software & plans", tabGradient(Screen.Plans)[0], at(Screen.Plans), note = (vm.plans?.all?.size ?: 0).toString()) {
                 go { nav.switchTo(Screen.Plans) }
             }

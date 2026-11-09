@@ -585,14 +585,17 @@ class Console200Test {
         assertEquals(Software.WEIGHT, form.software)
         assertEquals("2026-10-08", form.paidOn)
         assertEquals("renews a year unless told", 365, form.extendDays)
+        /* 2.3.0 — the form opens By plan; this test is the "Without plan" add */
+        assertTrue(form.byPlan)
+        val plain = form.copy(byPlan = false)
 
         /* refused before anything is sent: no amount */
-        vm.recordPayment(form.copy(amount = ""))
+        vm.recordPayment(plain.copy(amount = ""))
         assertEquals("Enter the amount received.", vm.lastSaid?.text)
         assertTrue(asked.isEmpty())
 
         var done: org.nexoraofficial.console.data.Payment? = null
-        vm.recordPayment(form.copy(amount = "9,000", extendDays = 0, validTo = "2027-06-10")) { done = it }
+        vm.recordPayment(plain.copy(amount = "9,000", extendDays = 0, validTo = "2027-06-10")) { done = it }
         until("recorded and read again") { done != null && vm.paymentsLoad == Load.READY }
         val s = sent!!
         assertEquals("add", s.getString("action"))

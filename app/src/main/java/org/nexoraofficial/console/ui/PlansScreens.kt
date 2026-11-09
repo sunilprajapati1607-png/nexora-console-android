@@ -204,11 +204,13 @@ fun PlanRow(sw: String, p: Plan, catalogue: List<FeatureDef>, onOpen: () -> Unit
         p.note?.let { Small(it, color = c.text) }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Mini("First year", Money.price(p.priceFirst))
+            Mini("First period", Money.price(p.priceFirst))
             Mini("Renewal", Money.price(p.priceRenewal))
             Mini("Users", p.usersIncluded?.toString() ?: "open")
             Mini("Extra user", Money.price(p.extraUserPrice))
         }
+        /* 2.3.0 — validity: how long one paid period runs */
+        Small("Validity ${p.periodDays} days per period" + (if (p.days == null) " (not set — a year)" else ""))
         Spacer(Modifier.height(6.dp))
         Small("${p.onCount(catalogue)} of ${catalogue.size} features · ${p.customers} customer" + (if (p.customers == 1) "" else "s") +
             (if (p.changed > 0) " · ${p.changed} changed" else ""))
@@ -361,14 +363,18 @@ private fun PlanBody(
                             })
                         Spacer(Modifier.height(8.dp))
                         val money = { s: String -> s.filter { ch -> ch.isDigit() || ch == '.' } }
+                        /* 2.3.0 — validity: the days one paid period runs; Record payment by plan adds them */
+                        ConsoleField("Validity — days in one period", form.days, { v -> form = form.copy(days = v.filter { ch -> ch.isDigit() }.take(4)) },
+                            numeric = true, supporting = "365 = a year · 1 to 3660", isError = form.daysValue == null)
+                        Spacer(Modifier.height(8.dp))
                         FieldPair(
-                            { ConsoleField("First year (₹)", form.priceFirst, { v -> form = form.copy(priceFirst = money(v)) }, it, placeholder = "open", numeric = true) },
-                            { ConsoleField("Renewal / year (₹)", form.priceRenewal, { v -> form = form.copy(priceRenewal = money(v)) }, it, placeholder = "open", numeric = true) }
+                            { ConsoleField("First period (₹)", form.priceFirst, { v -> form = form.copy(priceFirst = money(v)) }, it, placeholder = "open", numeric = true) },
+                            { ConsoleField("Renewal / period (₹)", form.priceRenewal, { v -> form = form.copy(priceRenewal = money(v)) }, it, placeholder = "open", numeric = true) }
                         )
                         Spacer(Modifier.height(8.dp))
                         FieldPair(
                             { ConsoleField("Users included", form.usersIncluded, { v -> form = form.copy(usersIncluded = v.filter { ch -> ch.isDigit() }) }, it, placeholder = "open", numeric = true) },
-                            { ConsoleField("Extra user / year (₹)", form.extraUserPrice, { v -> form = form.copy(extraUserPrice = money(v)) }, it, placeholder = "open", numeric = true) }
+                            { ConsoleField("Extra user / period (₹)", form.extraUserPrice, { v -> form = form.copy(extraUserPrice = money(v)) }, it, placeholder = "open", numeric = true) }
                         )
                         Spacer(Modifier.height(4.dp))
                         Small("Prices are before GST. A price left empty stays open — not set — until you fill it.")
@@ -387,14 +393,16 @@ private fun PlanBody(
                         p!!
                         FieldPair({ ReadField("Plan name", p.name, it) }, { ReadField("Gives", p.note ?: "—", it) })
                         Spacer(Modifier.height(8.dp))
+                        ReadField("Validity", "${p.periodDays} days per period" + (if (p.days == null) " (not set — a year)" else ""))
+                        Spacer(Modifier.height(8.dp))
                         FieldPair(
-                            { ReadField("First year", p.priceFirst?.let { Money.rupees(it) + " + GST" } ?: "open — not set", it) },
-                            { ReadField("Renewal / year", p.priceRenewal?.let { Money.rupees(it) + " + GST" } ?: "open — not set", it) }
+                            { ReadField("First period", p.priceFirst?.let { Money.rupees(it) + " + GST" } ?: "open — not set", it) },
+                            { ReadField("Renewal / period", p.priceRenewal?.let { Money.rupees(it) + " + GST" } ?: "open — not set", it) }
                         )
                         Spacer(Modifier.height(8.dp))
                         FieldPair(
                             { ReadField("Users included", p.usersIncluded?.toString() ?: "open", it) },
-                            { ReadField("Each extra user / year", p.extraUserPrice?.let { Money.rupees(it) } ?: "open", it) }
+                            { ReadField("Each extra user / period", p.extraUserPrice?.let { Money.rupees(it) } ?: "open", it) }
                         )
                         Spacer(Modifier.height(8.dp))
                         FieldPair(

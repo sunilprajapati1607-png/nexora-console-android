@@ -80,8 +80,13 @@ data class Plan(
     val customers: Int,
     val changed: Int,
     /** Standard and Pro: they can be retired, never deleted. */
-    val builtIn: Boolean
+    val builtIn: Boolean,
+    /** 2.3.0 — validity of one paid period in days (1–3660); null = not set, read as 365. */
+    val days: Int? = null
 ) {
+    /** 2.3.0 — the days one period runs: its own, else a year. */
+    val periodDays: Int get() = days?.takeIf { it > 0 } ?: 365
+
     /** A plan can be deleted only when it is not built in and nobody is on it (the service refuses otherwise). */
     val canDelete: Boolean get() = !builtIn && customers == 0
 
@@ -110,7 +115,8 @@ data class Plan(
                 createdAt = o.str("createdAt"),
                 customers = o.optInt("customers", 0).coerceAtLeast(0),
                 changed = o.optInt("changed", 0).coerceAtLeast(0),
-                builtIn = if (o.has("builtIn")) o.optBoolean("builtIn") else code in Plans.BUILT_IN
+                builtIn = if (o.has("builtIn")) o.optBoolean("builtIn") else code in Plans.BUILT_IN,
+                days = o.whole("days")?.takeIf { it > 0 }
             )
         }
     }
