@@ -71,7 +71,9 @@ class Api(
     private val baseUrl: String,
     private val key: String,
     /* 4.72.0 — audit #36: a release build sends the key only to Nexora's own service */
-    private val anyHost: Boolean = BuildConfig.DEBUG
+    private val anyHost: Boolean = BuildConfig.DEBUG,
+    /* 2.3.1 — how long a sleeping service is waited for, quietly, before "waking" is said (tests shorten it) */
+    private val wakeWaitMs: Long = WAKE_WAIT_MS
 ) : WatchSource {
 
     companion object {
@@ -80,7 +82,17 @@ class Api(
 
         /** 1.9.0 — how long a Fabric Stock call may take to answer: its service can take ~55 s to wake. */
         const val SLOW_READ_MS = 90_000
+
+        /** 2.3.1 — a free service asleep takes 15–60 s to wake; up to 2 minutes is waited for. */
+        const val WAKE_WAIT_MS = 120_000L
+
+        /** 2.3.1 — what is said when the servers are still waking after the wait. */
+        const val WAKING = "The servers are waking up (they sleep when nobody uses them). Try again in a minute."
     }
+
+    /* 2.3.1 — Render's own front door answers 429 / 502 / 503 / 504 (not JSON) while a sleeping service wakes.
+       The request never reached the service, so it is asked again — a POST too — every few seconds. */
+    private class FrontDoor(val status: Int) : Exception()
 
     override suspend fun licences(): ConsoleData = withContext(Dispatchers.IO) {
         ConsoleData.from(request("GET", "/admin/api/licences", null))
@@ -281,8 +293,24 @@ class Api(
     private fun request(method: String, path: String, body: JSONObject?): JSONObject =
         exchange(method, path, body).second
 
-    /** One call: the HTTP status and the JSON that came back. */
+    /** One call: the HTTP status and the JSON that came back — waiting quietly while a sleeping service wakes. */
     private fun exchange(method: String, path: String, body: JSONObject?, readMs: Int = 60_000): Pair<Int, JSONObject> {
+        val until = System.currentTimeMillis() + wakeWaitMs
+        var n = 0
+        while (true) {
+            try {
+                return exchangeOnce(method, path, body, readMs)
+            } catch (e: FrontDoor) {
+                val pause = minOf(5_000L, 1_000L * (n + 1))
+                n++
+                /* status 0: "asleep", never the 429 of an address shut out for wrong keys */
+                if (System.currentTimeMillis() + pause > until) throw ApiError(WAKING, 0, "WAKING")
+                Thread.sleep(pause)
+            }
+        }
+    }
+
+    private fun exchangeOnce(method: String, path: String, body: JSONObject?, readMs: Int): Pair<Int, JSONObject> {
         /* 4.72.0 — audit #36: refused before a connection is even opened, so
            the key never leaves the phone for an address that is not Nexora's. */
         ServiceHost.problem(baseUrl, anyHost)?.let { throw ApiError(it) }
@@ -313,6 +341,7 @@ class Api(
             val status = c.responseCode
             /* Any 3xx at all: nothing is sent on, and the owner is told where to look. */
             if (status in 300..399) throw ApiError(ApiError.MOVED, status, "MOVED")
+            if (status in setOf(429, 502, 503, 504) && !(c.contentType ?: "").contains("json", ignoreCase = true)) throw FrontDoor(status)
             val text = (if (status in 200..299) c.inputStream else c.errorStream)
                 ?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
 
@@ -328,6 +357,8 @@ class Api(
             }
             return status to json
         } catch (e: ApiError) {
+            throw e
+        } catch (e: FrontDoor) {
             throw e
         } catch (e: Exception) {
             /* A name that will not resolve, a phone with no signal, a service

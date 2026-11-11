@@ -23,6 +23,8 @@ class TinyServer(private val answer: (target: String, headers: Map<String, Strin
     @Volatile var lastBody: String? = null
     /** Extra headers on every answer (a redirect's Location, say). */
     @Volatile var replyHeaders: Map<String, String> = emptyMap()
+    /** 2.3.1 — the answer's content type (Render's own front door answers text/plain). */
+    @Volatile var contentType: String = "application/json"
 
     val base: String get() = "http://127.0.0.1:${socket.localPort}"
 
@@ -62,7 +64,7 @@ class TinyServer(private val answer: (target: String, headers: Map<String, Strin
                     val out = c.getOutputStream()
                     val extra = replyHeaders.entries.joinToString("") { "${it.key}: ${it.value}\r\n" }
                     out.write(
-                        ("HTTP/1.1 $status X\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\n" +
+                        ("HTTP/1.1 $status X\r\nContent-Type: $contentType\r\nContent-Length: ${bytes.size}\r\n" +
                             extra + "Connection: close\r\n\r\n").toByteArray(Charsets.US_ASCII)
                     )
                     out.write(bytes)

@@ -1,9 +1,9 @@
 {
-    "versionCode": 26,
-    "versionName": "2.3.0",
-    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.3.0-26.apk",
-    "notes": "Payment by plan: choose plan, users and periods — the amount (users included, extra users × price) is worked out and the plan’s days are added by themselves. Plans have validity days. Invoices with GST and without, receipts, Invoice Settings, Share / Save PDF, cancel, and an Invoices list.",
-    "sha256": "9f5a04130005d04d5a6ede6aa97c9aaf41f9f4e21779d781cae6471666415551",
-    "sizeBytes": 12250362,
-    "publishedAt": "2026-11-09T16:10:53Z"
+    "versionCode": 27,
+    "versionName": "2.3.1",
+    "url": "https://raw.githubusercontent.com/sunilprajapati1607-png/nexora-console-android/main/releases/nexora-console-2.3.1-27.apk",
+    "notes": "Servers asleep: when a free server is waking up, the phone now waits quietly (up to 2 minutes) and the data comes by itself — no more \"Request failed (429)\".",
+    "sha256": "da586b64ce20f245b5667cf1548751a0d930ee4f1a09892982d1f2fd6942abb6",
+    "sizeBytes": 12250966,
+    "publishedAt": "2026-11-11T04:46:38Z"
 }
